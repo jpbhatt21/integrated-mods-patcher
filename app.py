@@ -5,7 +5,6 @@ from pathlib import Path
 import time
 from typing import TypedDict, Optional
 from flask import Flask, jsonify, render_template
-import threading
 from datetime import datetime
 from dotenv import load_dotenv
 from waitress import serve
@@ -31,9 +30,6 @@ session.mount("http://", adapter)
 session.mount("https://", adapter)
 
 # --- Global Variables ---
-logs = []  # Store recent logs
-log_lock = threading.Lock()  # Thread-safe log updates
-LOG_FILE = Path("scraper.log")
 is_running = False  # Track if scraper is currently running
 
 # --- Custom Data Types ---
@@ -78,7 +74,7 @@ DEBUG_MODE = os.getenv("DEBUG_MODE", "False").lower() == "true"
 SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "1"))
 
 # Sleep to avoid rate limiting or ip bans
-SLEEP_BETWEEN_DOWNLOADS = 10
+SLEEP_BETWEEN_DOWNLOADS = 2
 
 # Request timeout (seconds)
 REQUEST_TIMEOUT = 60
@@ -106,45 +102,6 @@ CATEGORY_LIST_SUBURL = "/Mod/Categories?_idCategoryRow={}&_sSort=a_to_z&_bShowEm
 CATEGORY_SUBURL = "/Mod/Index?_nPerpage=50&_aFilters%5BGeneric_Category%5D={}&_sSort=Generic_Oldest&_nPage={}"
 MOD_SUBURL = "/{}/ProfilePage"
 
-# --- Logging Functions ---
-def log(message: str):
-    """Thread-safe logging to both array and console."""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = f"[{timestamp}] {message}"
-    
-    with log_lock:
-        logs.append(log_entry)
-    
-    print(log_entry)  # Still print to console for debugging
-
-def save_logs_to_file():
-    """Periodically save logs to file and clear the array."""
-    while True:
-        print("Log-saving thread sleeping...")
-        time.sleep(60)  # Wait 60 seconds
-        
-        print("Log-saving thread woke up, checking logs...")
-        logs_to_save = []
-        
-        # Copy logs while holding lock (minimal lock time)
-        with log_lock:
-            if logs:
-                logs_to_save = logs.copy()
-                logs.clear()
-        
-        # Write to file outside of lock (prevents deadlock)
-        if logs_to_save:
-            try:
-                with open(LOG_FILE, 'a', encoding='utf-8') as f:
-                    for log_entry in logs_to_save:
-                        f.write(log_entry + '\n')
-                print(f"Saved {len(logs_to_save)} logs to file")
-            except Exception as e:
-                print(f"Error saving logs to file: {e}")
-                # Put logs back if save failed
-                with log_lock:
-                    logs.extend(logs_to_save)
-
 # --- Flask Routes ---
 @app.route('/')
 def home():
@@ -153,7 +110,7 @@ def home():
 
 @app.route('/start', methods=['GET', 'POST'])
 def start_scraper():
-    """Start the scraper in a background thread."""
+    """Start the scraper."""
     global is_running
     
     if is_running:
@@ -162,39 +119,31 @@ def start_scraper():
             "message": "Scraper is already running"
         }), 400
     
+    # Run scraper synchronously (blocking)
     is_running = True
-    
-    # Start scraper in background thread
-    thread = threading.Thread(target=run_main2, daemon=True)
-    thread.start()
-    
-    return jsonify({
-        "status": "success",
-        "message": "Scraper started successfully"
-    })
-
-
+    try:
+        main2()
+        return jsonify({
+            "status": "success",
+            "message": "Scraper completed successfully"
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Scraper failed: {str(e)}"
+        }), 500
+    finally:
+        is_running = False
 
 @app.route('/status', methods=['GET'])
 def get_status():
     """Return current scraper status."""
-    all_logs = []
-    # Read from log file
-    if LOG_FILE.exists():
-        with open(LOG_FILE, 'r', encoding='utf-8') as f:
-            file_logs = f.readlines()
-            all_logs.extend([line.strip() for line in file_logs])
-    
-    # Add current logs array (in reverse order)
-    with log_lock:
-        all_logs.extend(logs.copy())
     return jsonify({
         "status": "success",
         "is_running": is_running,
-        "log_count": len(logs),
-        "log_file_exists": LOG_FILE.exists(),
-        "logs": all_logs
-
+        "log_count": 0,
+        "log_file_exists": False,
+        "logs": []
     })
 
 # --- NocoDB Functions ---
@@ -210,13 +159,13 @@ def post(table:str, data: dict) -> dict:
         response.raise_for_status()
         return response.json()
     except requests.exceptions.Timeout:
-        log(f"Timeout posting to NocoDB table {table}")
+        print(f"Timeout posting to NocoDB table {table}")
         return {}
     except requests.exceptions.RequestException as e:
-        log(f"Error posting to NocoDB table {table}: {e}")
+        print(f"Error posting to NocoDB table {table}: {e}")
         return {}
     except Exception as e:
-        log(f"Unexpected error posting to NocoDB: {e}")
+        print(f"Unexpected error posting to NocoDB: {e}")
         return {}
 
 # --- Dependency Check ---
@@ -224,20 +173,20 @@ def check_and_install_dependencies() -> bool:
     """Checks if unrar is installed and installs it from source if missing."""
     import subprocess
     
-    log("Checking for required extraction tools...")
+    print("Checking for required extraction tools...")
     
     # Check if unrar is available
     try:
         result = subprocess.run(['which', 'unrar'], capture_output=True, text=True)
         if result.stdout.strip():
-            log("✓ unrar is already installed")
+            print("✓ unrar is already installed")
             return True
     except Exception:
         pass
     
     # unrar not found, install it
-    log("⚠ unrar not found. Installing from source...")
-    log("This may take a few minutes and requires sudo privileges.")
+    print("⚠ unrar not found. Installing from source...")
+    print("This may take a few minutes and requires sudo privileges.")
     
     commands = [
         "sudo apt-get install p7zip-full unzip unrar-free -y",
@@ -251,42 +200,42 @@ def check_and_install_dependencies() -> bool:
     
     try:
         # Install p7zip-full and unzip
-        log("Installing p7zip-full and unzip...")
+        print("Installing p7zip-full and unzip...")
         subprocess.run(commands[0], shell=True, check=True)
         
         # Download unrar source
-        log("Downloading unrar source...")
+        print("Downloading unrar source...")
         subprocess.run(commands[1], shell=True, check=True)
         
         # Extract
-        log("Extracting...")
+        print("Extracting...")
         subprocess.run(commands[2], shell=True, check=True)
         
         # Build library
-        log("Building unrar library...")
+        print("Building unrar library...")
         subprocess.run(commands[3], shell=True, check=True)
         
         # Install library
-        log("Installing unrar library...")
+        print("Installing unrar library...")
         subprocess.run(commands[4], shell=True, check=True)
         
         # Update library cache
-        log("Updating library cache...")
+        print("Updating library cache...")
         subprocess.run(commands[5], shell=True, check=True)
         
         # Cleanup
-        log("Cleaning up...")
+        print("Cleaning up...")
         subprocess.run(commands[6], shell=True, check=True)
         
-        log("✓ unrar installed successfully!")
+        print("✓ unrar installed successfully!")
         return True
         
     except subprocess.CalledProcessError as e:
-        log(f"✗ Error during installation: {e}")
-        log("You may need to install unrar manually.")
+        print(f"✗ Error during installation: {e}")
+        print("You may need to install unrar manually.")
         return False
     except Exception as e:
-        log(f"✗ Unexpected error: {e}")
+        print(f"✗ Unexpected error: {e}")
         return False
 
 # --- Helper Functions ---
@@ -307,9 +256,9 @@ def get_cats(game: str) -> None:
                 count=datum['_nItemCount']
             ))
     except requests.exceptions.RequestException as e:
-        log(f"Error fetching categories: {e}")
+        print(f"Error fetching categories: {e}")
     except Exception as e:
-        log(f"Unexpected error in get_cats: {e}")
+        print(f"Unexpected error in get_cats: {e}")
     return cats
 
 def get_mods(category: Category) -> list[Mod]:
@@ -333,10 +282,10 @@ def get_mods(category: Category) -> list[Mod]:
                     modified=record.get('_tsDateModified',0)
                 ))
         except requests.exceptions.RequestException as e:
-            log(f"Error fetching category data for page {i//50 + 1}: {e}")
+            print(f"Error fetching category data for page {i//50 + 1}: {e}")
         except Exception as e:
-            log(f"Unexpected error in get_mods: {e}")
-    log(f"Fetched {len(mods)} mods from category {category['name']} count {category['count']}.")
+            print(f"Unexpected error in get_mods: {e}")
+    print(f"Fetched {len(mods)} mods from category {category['name']} count {category['count']}.")
     sort_by_date_difference(mods)
     return mods[0:SAMPLE_LIMIT] if DEBUG_MODE else mods
 
@@ -363,9 +312,9 @@ def get_files(mod: Mod) -> list[File]:
                     added=file.get('_tsDateAdded'),
                 ))
     except requests.exceptions.RequestException as e:
-        log(f"Error fetching mod profile data: {e}")
+        print(f"Error fetching mod profile data: {e}")
     except Exception as e:
-        log(f"Unexpected error in get_files: {e}")
+        print(f"Unexpected error in get_files: {e}")
     if files:
         files.sort(key=lambda x: x['added'])
     return files[0:SAMPLE_LIMIT] if DEBUG_MODE else files
@@ -389,7 +338,7 @@ def sort_by_date_difference(records: list[Mod]) -> list[Mod]:
 
 def download_file(url: str, name: str) -> bool:
     """Downloads a file from a URL to a specific path."""
-    log(f"Downloading {url}...")
+    print(f"Downloading {url}...")
     save_path = DOWNLOAD_DIR / name
     try:
         response = session.get(url, stream=True, timeout=REQUEST_TIMEOUT)
@@ -400,23 +349,23 @@ def download_file(url: str, name: str) -> bool:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:  # filter out keep-alive chunks
                     f.write(chunk)
-        log("Download complete.")
+        print("Download complete.")
         return True
     except requests.exceptions.Timeout:
-        log(f"Timeout downloading {url}")
+        print(f"Timeout downloading {url}")
         return False
     except requests.exceptions.RequestException as e:
-        log(f"Error downloading {url}: {e}")
+        print(f"Error downloading {url}: {e}")
         return False
     except Exception as e:
-        log(f"Unexpected error downloading {url}: {e}")
+        print(f"Unexpected error downloading {url}: {e}")
         return False
 
 def extract_file(name:str) -> bool:
     """Extracts a .zip, .rar, or .7z file to a target directory using command-line tools."""
     import subprocess
     
-    log(f"Extracting {name}...")
+    print(f"Extracting {name}...")
     src = DOWNLOAD_DIR / name
     tgt = EXTRACT_DIR / Path(name).stem
     # Ensure the extraction directory exists
@@ -448,30 +397,30 @@ def extract_file(name:str) -> bool:
                 timeout=300  # 5 minute timeout
             )
         else:
-            log(f"Unsupported file type: {src.suffix}")
+            print(f"Unsupported file type: {src.suffix}")
             return False
         
         # Check if extraction was successful (0 or 1 for unzip warnings)
         if result.returncode not in [0, 1]:
-            log(f"Error extracting {src.name} (exit code: {result.returncode})")
+            print(f"Error extracting {src.name} (exit code: {result.returncode})")
             if result.stderr:
-                log(f"  stderr: {result.stderr}")
+                print(f"  stderr: {result.stderr}")
             if result.stdout:
-                log(f"  stdout: {result.stdout}")
+                print(f"  stdout: {result.stdout}")
             return False
             
-        log("Extraction complete.")
+        print("Extraction complete.")
         return True
     
     except subprocess.TimeoutExpired:
-        log(f"Timeout extracting {src.name} (took more than 5 minutes)")
+        print(f"Timeout extracting {src.name} (took more than 5 minutes)")
         return False
     except FileNotFoundError as e:
-        log(f"Error: Required extraction tool not found.")
-        log("Install with: sudo apt install unzip unrar p7zip-full")
+        print(f"Error: Required extraction tool not found.")
+        print("Install with: sudo apt install unzip unrar p7zip-full")
         return False
     except Exception as e:
-        log(f"Error extracting {src.name}: {e}")
+        print(f"Error extracting {src.name}: {e}")
         return False
 
 def read_ini(path: Path) -> dict:
@@ -501,13 +450,13 @@ def read_ini(path: Path) -> dict:
                 "content": content
             }
         except Exception as e:
-            log(f"Error reading {path.name} with alternate encoding: {e}")
+            print(f"Error reading {path.name} with alternate encoding: {e}")
             return {
                 "name": path.name,
                 "content": ""
             }
     except Exception as e:
-        log(f"Error reading INI file {path.name}: {e}")
+        print(f"Error reading INI file {path.name}: {e}")
         return {
             "name": path.name,
             "content": ""
@@ -526,19 +475,19 @@ def upload_ini(ini_data: dict) -> dict:
 
 def cleanup(name:str):
     """Deletes the specified file and directory."""
-    log("Cleaning up temporary files...")
+    print("Cleaning up temporary files...")
     archive_path = DOWNLOAD_DIR / name
     extracted_dir = EXTRACT_DIR / Path(name).stem
     try:
         if archive_path and archive_path.exists():
             os.remove(archive_path)
-            log(f"Deleted {archive_path.name}")
+            print(f"Deleted {archive_path.name}")
         
         if extracted_dir and extracted_dir.exists():
             shutil.rmtree(extracted_dir)
-            log(f"Deleted directory {extracted_dir.name}")       
+            print(f"Deleted directory {extracted_dir.name}")       
     except OSError as e:
-        log(f"Error during cleanup: {e}")
+        print(f"Error during cleanup: {e}")
 
 def process_file(file: File):
     name = f'{file["id"]}.{file["ext"]}'
@@ -565,51 +514,28 @@ def process_file(file: File):
         del file["data"]["reason"]
     except Exception as e:
         file['data']['reason']=f"err: {e}"
-        log(f"An unexpected error occurred for {file['id']}: {e}") 
+        print(f"An unexpected error occurred for {file['id']}: {e}") 
     finally:
         # 5. Delete zip/unzipped data (runs even if errors occurred)
         cleanup(name)
-        log("-" * 40)
+        print("-" * 40)
     return file
 
 
 def batch_process_files(files: list[File]):
-    """Process files asynchronously using threads."""
-    import concurrent.futures
-    import threading
-    
+    """Process files sequentially."""
     processed_files = {}
-    lock = threading.Lock()  # For thread-safe dictionary updates
     
-    def process_and_store(file: File):
-        """Wrapper function to process a file and store results safely."""
-        log(f"Processing file: {file['id']}")
+    for file in files:
+        print(f"Processing file: {file['id']}")
         file = process_file(file) or file
         
         if file["data"]["status"] == "success":
-            log(f"Processed file {file['id']} successfully with {file['data']['ini_count']} INI files.")
+            print(f"Processed file {file['id']} successfully with {file['data']['ini_count']} INI files.")
         else:
-            log(f"Failed to process file {file['id']}: {file['data']['reason']}")
+            print(f"Failed to process file {file['id']}: {file['data']['reason']}")
         
-        # Thread-safe update of processed_files
-        with lock:
-            processed_files[file["id"]] = file["data"]
-    
-    # Use ThreadPoolExecutor to process files concurrently
-    # max_workers=5 means up to 5 files can be processed simultaneously
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        # Submit all file processing tasks
-        futures = [executor.submit(process_and_store, file) for file in files]
-        
-        # Wait for all tasks to complete
-        concurrent.futures.wait(futures)
-        
-        # Check for exceptions in any thread
-        for future in futures:
-            try:
-                future.result()  # This will raise any exception that occurred
-            except Exception as e:
-                log(f"Thread execution error: {e}")
+        processed_files[file["id"]] = file["data"]
     
     return processed_files
 
@@ -622,21 +548,21 @@ def main2():
         EXTRACT_DIR.mkdir(exist_ok=True, parents=True)
         cats=get_cats(GAME)
         if not cats:
-            log("No categories found.")
+            print("No categories found.")
             return 0
-        log (f"Fetched categories:")
+        print(f"Fetched categories:")
         for cat in cats:
-            log (f" - {cat['name']} (ID: {cat['id']}, Count: {cat['count']})")
-        log("-" * 40)
-        log(f"Starting scraping for game {GAME}...")
+            print(f" - {cat['name']} (ID: {cat['id']}, Count: {cat['count']})")
+        print("-" * 40)
+        print(f"Starting scraping for game {GAME}...")
         for cat in cats:
-            log(f"Category: {cat['name']} (ID: {cat['id']}, Count: {cat['count']})")
+            print(f"Category: {cat['name']} (ID: {cat['id']}, Count: {cat['count']})")
             mods = get_mods(cat)
-            log(f"Fetched metadata for {len(mods)} mod(s).")
+            print(f"Fetched metadata for {len(mods)} mod(s).")
             for mod in mods:
-                log(f"Mod : {mod}")
+                print(f"Mod : {mod}")
                 files = get_files(mod)
-                log(f"Mod ID {mod['id']} has {len(files)} files.")
+                print(f"Mod ID {mod['id']} has {len(files)} files.")
                 file_data=batch_process_files(files)
                 data ={
                     "Id" : mod['id'],
@@ -646,45 +572,30 @@ def main2():
                     "Data": file_data
                 }
                 post(GAME, data)
-                log(f"Uploaded mod {mod['id']} data to NocoDB. Sleeping for {SLEEP_BETWEEN_DOWNLOADS} seconds...")
+                print(f"Uploaded mod {mod['id']} data to NocoDB. Sleeping for {SLEEP_BETWEEN_DOWNLOADS} seconds...")
                 time.sleep(SLEEP_BETWEEN_DOWNLOADS)
-        log("Scraping completed successfully!")
+        print("Scraping completed successfully!")
     except Exception as e:
-        log(f"Error in main2: {e}")
+        print(f"Error in main2: {e}")
     finally:
         is_running = False
 
-def run_main2():
-    """Wrapper to run main2 with is_running flag."""
-    global is_running
-    is_running = True
-    log("Starting scraper...")
-    main2()
-    log("Scraper finished.")
-    is_running = False
-    
 if __name__ == "__main__":
-    # Start log-saving thread
-    log_thread = threading.Thread(target=save_logs_to_file, daemon=True)
-    log_thread.start()
-    log("Log-saving thread started")
-    
     # Check dependencies on startup
-    log("=" * 50)
-    log("GameBanana Scraper - Flask Server Starting")
-    log("=" * 50)
+    print("=" * 50)
+    print("GameBanana Scraper - Flask Server Starting")
+    print("=" * 50)
     
     if not check_and_install_dependencies():
-        log("⚠ Warning: Could not verify all dependencies.")
-        log("Some extractions may fail.")
+        print("⚠ Warning: Could not verify all dependencies.")
+        print("Some extractions may fail.")
     
-    log("=" * 50)
-    log("Flask server is ready")
-    log("Use /start to begin scraping")
-    log("Use /progress to view logs")
-    log("Use /status to check status")
-    log("=" * 50)
+    print("=" * 50)
+    print("Flask server is ready")
+    print("Use /start to begin scraping")
+    print("Use /status to check status")
+    print("=" * 50)
     
     # Start Flask app with Waitress (production-ready WSGI server)
-    log("Starting Waitress server on http://0.0.0.0:5000")
+    print("Starting Waitress server on http://0.0.0.0:5000")
     serve(app, host='0.0.0.0', port=5000, threads=4)
