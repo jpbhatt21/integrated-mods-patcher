@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: integrated-mods-patcher:latest
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+    volumes:
+      - download_temp:/app/download_temp
+      - extract_temp:/app/extract_temp
+      - templates:/app/templates
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/status"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  download_temp:
+  extract_temp:
+  templates:
