@@ -209,7 +209,7 @@ def check_and_install_dependencies() -> bool:
     log("This may take a few minutes and requires sudo privileges.")
     
     commands = [
-        "sudo apt-get install p7zip-full unzip -y",
+        "sudo apt-get install p7zip-full unzip unrar-free -y",
         "wget https://www.rarlab.com/rar/unrarsrc-5.6.4.tar.gz",
         "tar -xvzf unrarsrc-5.6.4.tar.gz",
         "cd unrar && make lib",
