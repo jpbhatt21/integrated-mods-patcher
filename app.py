@@ -92,6 +92,7 @@ NOCO_BASE_URL = os.getenv("NOCO_BASE_URL", "https://db.wwmm.bhatt.jp/api/v1/db/d
 NOCO_VARS = {
     "WW": os.getenv("NOCO_WW", ""),
     "ZZ": os.getenv("NOCO_ZZ", ""),
+    "GI": os.getenv("NOCO_GI", ""),
     "ini": os.getenv("NOCO_INI", ""),
     "bearer": os.getenv("NOCO_BEARER", "")
 }
