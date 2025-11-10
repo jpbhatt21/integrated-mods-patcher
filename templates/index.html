@@ -222,6 +222,26 @@
             box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
         }
 
+        .progress-bar-bg {
+            background: rgba(255,255,255,0.06);
+            border-radius: 6px;
+            height: 14px;
+            width: 100%;
+            margin-top: 6px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent) 0%, var(--muted) 100%);
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        .category-row { margin-bottom: 12px; }
+
+        .mod-list { font-size: 0.85em; color: var(--muted-foreground); margin-top: 8px; }
+
         .logs-container::-webkit-scrollbar {
             width: 10px;
         }
@@ -345,6 +365,18 @@
                 <span class="status-label">Log File:</span>
                 <span class="status-value" id="logFile">-</span>
             </div>
+            <div class="status-item">
+                <span class="status-label">Processed files:</span>
+                <span class="status-value" id="processedCount">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Total mods (all categories):</span>
+                <span class="status-value" id="totalMods">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Overall progress:</span>
+                <span class="status-value" id="overallProgress">0%</span>
+            </div>
         </div>
 
         <div class="button-group">
@@ -363,6 +395,16 @@
             </div>
             <div class="logs-container" id="logsContainer">
                 <div class="log-empty">No logs available yet. Start the scraper to see logs.</div>
+            </div>
+        </div>
+
+        <div class="logs-section" id="progressSection">
+            <div class="logs-header">
+                <span class="logs-title">📊 Progress by Category</span>
+                <span class="logs-count" id="progressCount">0 categories</span>
+            </div>
+            <div class="logs-container" id="progressContainer">
+                <div class="log-empty">No progress yet. Start the scraper to see per-category progress.</div>
             </div>
         </div>
 
@@ -385,6 +427,8 @@
             logsContainer.scrollTop = logsContainer.scrollHeight;
         }
 
+        let pollInterval = null;
+
         async function refreshStatus() {
             const statusCard = document.getElementById('statusCard');
             statusCard.classList.add('loading');
@@ -402,7 +446,18 @@
                     statusEl.className = 'status-value ' + (isRunning ? 'status-running' : 'status-stopped');
 
                     // Update log count
-                    document.getElementById('logCount').textContent = data.log_count;
+                    document.getElementById('logCount').textContent = data.log_count || 0;
+
+                    // Update processed files count (sanitized)
+                    const processed = data.progress && data.progress.processedCount ? data.progress.processedCount : 0;
+                    document.getElementById('processedCount').textContent = processed;
+
+                    // Update total mods and overall progress
+                    const totalMods = data.progress && data.progress.totalMods ? data.progress.totalMods : 0;
+                    const totalCompleted = data.progress && data.progress.totalCompleted ? data.progress.totalCompleted : 0;
+                    document.getElementById('totalMods').textContent = totalMods;
+                    const overallPct = totalMods > 0 ? Math.round((totalCompleted / totalMods) * 100) : 0;
+                    document.getElementById('overallProgress').textContent = `${overallPct}% (${totalCompleted}/${totalMods})`;
 
                     // Update log file status
                     document.getElementById('logFile').textContent = data.log_file_exists ? '✅ Exists' : '❌ Not Found';
@@ -414,6 +469,17 @@
 
                     // Update logs display
                     updateLogs(data.logs || []);
+
+                    // Update progress by category
+                    updateProgressByCategory(data.progress || {}, data.categories || []);
+
+                    // If running, start polling every 5 seconds; otherwise stop polling
+                    if (isRunning && !pollInterval) {
+                        pollInterval = setInterval(refreshStatus, 5000);
+                    } else if (!isRunning && pollInterval) {
+                        clearInterval(pollInterval);
+                        pollInterval = null;
+                    }
                     
                     // Scroll to bottom after updating logs
                     scrollLogsToBottom();
@@ -452,6 +518,53 @@
             });
 
             logsContainer.innerHTML = logsHTML;
+        }
+
+        function updateProgressByCategory(progress, categoriesMeta) {
+            const container = document.getElementById('progressContainer');
+            const countEl = document.getElementById('progressCount');
+            if (!progress || !progress.categories || Object.keys(progress.categories).length === 0) {
+                container.innerHTML = '<div class="log-empty">No progress yet. Start the scraper to see per-category progress.</div>';
+                countEl.textContent = '0 categories';
+                return;
+            }
+
+            const cats = progress.categories || {};
+            // Build maps of meta by id and by name for robust lookups
+            const metaById = {};
+            const metaByName = {};
+            for (const m of categoriesMeta || []) {
+                if (!m) continue;
+                if (m.id != null) metaById[String(m.id)] = m;
+                if (m.name) metaByName[m.name] = m;
+            }
+
+            const entries = Object.entries(cats || {});
+            countEl.textContent = `${entries.length} categories`;
+
+            // Sort entries by category name when possible for stable UI
+            entries.sort((a, b) => {
+                const aMeta = metaById[a[0]] || metaByName[a[0]] || {};
+                const bMeta = metaById[b[0]] || metaByName[b[0]] || {};
+                const aName = (aMeta.name || a[0]).toString();
+                const bName = (bMeta.name || b[0]).toString();
+                return aName.localeCompare(bName);
+            });
+
+            let html = '';
+            for (const [catId, info] of entries) {
+                const completed = (info && info.completedCount) || 0;
+                const recent = (info && info.recentCompleted) || [];
+                // Prefer total provided by the server; fallback to meta maps
+                const total = (info && info.total != null) ? info.total : ((metaById[catId] && metaById[catId].count) || (metaByName[catId] && metaByName[catId].count) || 0);
+                const displayName = (metaById[catId] && metaById[catId].name) || (metaByName[catId] && metaByName[catId].name) || ('Category ' + catId);
+                const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+                html += `<div class="log-entry category-row"><div><strong>${escapeHtml(displayName)}</strong> — ${completed}/${total}</div>`;
+                html += `<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${percent}%"></div></div>`;
+                html += `<div class="mod-list">${recent.slice(-5).map(m=>escapeHtml(m)).join(', ')}</div>`;
+                html += `</div>`;
+            }
+            container.innerHTML = html;
         }
 
         function escapeHtml(text) {
