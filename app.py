@@ -9,12 +9,26 @@ import threading
 from datetime import datetime
 from dotenv import load_dotenv
 from waitress import serve
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Load environment variables
 load_dotenv()
 
 # --- Flask App ---
 app = Flask(__name__)
+
+# --- Configure requests session with retry logic ---
+session = requests.Session()
+retry_strategy = Retry(
+    total=3,  # Total number of retries
+    backoff_factor=1,  # Wait 1, 2, 4 seconds between retries
+    status_forcelist=[429, 500, 502, 503, 504],  # Retry on these HTTP status codes
+    allowed_methods=["GET", "POST"]  # Retry on GET and POST
+)
+adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=20)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
 
 # --- Global Variables ---
 logs = []  # Store recent logs
@@ -66,6 +80,9 @@ SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "1"))
 # Sleep to avoid rate limiting or ip bans
 SLEEP_BETWEEN_DOWNLOADS = 10
 
+# Request timeout (seconds)
+REQUEST_TIMEOUT = 60
+
 
 # Gamebanana game category id
 GAME_IDS = {
@@ -106,19 +123,27 @@ def save_logs_to_file():
         print("Log-saving thread sleeping...")
         time.sleep(60)  # Wait 60 seconds
         
+        print("Log-saving thread woke up, checking logs...")
+        logs_to_save = []
+        
+        # Copy logs while holding lock (minimal lock time)
         with log_lock:
-            print("Log-saving thread woke up, checking logs...")
             if logs:
-
-                # Append logs to file
-                with open(LOG_FILE, 'a', encoding='utf-8') as f:
-                    for log_entry in logs:
-                        f.write(log_entry + '\n')
-                
-                
-                # Clear the logs array
+                logs_to_save = logs.copy()
                 logs.clear()
-                log(f"Saved {len(logs)} logs to file and cleared array")
+        
+        # Write to file outside of lock (prevents deadlock)
+        if logs_to_save:
+            try:
+                with open(LOG_FILE, 'a', encoding='utf-8') as f:
+                    for log_entry in logs_to_save:
+                        f.write(log_entry + '\n')
+                print(f"Saved {len(logs_to_save)} logs to file")
+            except Exception as e:
+                print(f"Error saving logs to file: {e}")
+                # Put logs back if save failed
+                with log_lock:
+                    logs.extend(logs_to_save)
 
 # --- Flask Routes ---
 @app.route('/')
@@ -181,11 +206,17 @@ def post(table:str, data: dict) -> dict:
         "xc-token": NOCO_VARS["bearer"]
     }
     try:
-        response = requests.post(url, json=data, headers=headers, timeout=30)
+        response = session.post(url, json=data, headers=headers, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
+    except requests.exceptions.Timeout:
+        log(f"Timeout posting to NocoDB table {table}")
+        return {}
     except requests.exceptions.RequestException as e:
         log(f"Error posting to NocoDB table {table}: {e}")
+        return {}
+    except Exception as e:
+        log(f"Unexpected error posting to NocoDB: {e}")
         return {}
 
 # --- Dependency Check ---
@@ -203,7 +234,7 @@ def check_and_install_dependencies() -> bool:
             return True
     except Exception:
         pass
-    return True
+    
     # unrar not found, install it
     log("⚠ unrar not found. Installing from source...")
     log("This may take a few minutes and requires sudo privileges.")
@@ -262,15 +293,23 @@ def check_and_install_dependencies() -> bool:
 def get_cats(game: str) -> None:
     """Initializes the CATEGORIES list with category data from GameBanana API."""
     cats = []
-    response = requests.get(API_BASE_URL.format(CATEGORY_LIST_SUBURL.format(GAME_IDS[game])), timeout=30)  
-    response.raise_for_status()
-    data = response.json()
-    for datum in data:
-        cats.append(Category(
-            name=datum['_sName'],
-            id=datum['_idRow'],
-            count=datum['_nItemCount']
-        )) 
+    try:
+        response = session.get(
+            API_BASE_URL.format(CATEGORY_LIST_SUBURL.format(GAME_IDS[game])), 
+            timeout=REQUEST_TIMEOUT
+        )  
+        response.raise_for_status()
+        data = response.json()
+        for datum in data:
+            cats.append(Category(
+                name=datum['_sName'],
+                id=datum['_idRow'],
+                count=datum['_nItemCount']
+            ))
+    except requests.exceptions.RequestException as e:
+        log(f"Error fetching categories: {e}")
+    except Exception as e:
+        log(f"Unexpected error in get_cats: {e}")
     return cats
 
 def get_mods(category: Category) -> list[Mod]:
@@ -280,7 +319,10 @@ def get_mods(category: Category) -> list[Mod]:
     for i in range(0,category['count'],50):
         # print (API_BASE_URL.format(CATEGORY_SUBURL.format(category['id'],i//50 +1 )))
         try:
-            response = requests.get(API_BASE_URL.format(CATEGORY_SUBURL.format(category['id'],i//50 +1 )), timeout=30)
+            response = session.get(
+                API_BASE_URL.format(CATEGORY_SUBURL.format(category['id'],i//50 +1 )), 
+                timeout=REQUEST_TIMEOUT
+            )
             response.raise_for_status()
             data = response.json()
             records = data.get('_aRecords', [])
@@ -291,7 +333,9 @@ def get_mods(category: Category) -> list[Mod]:
                     modified=record.get('_tsDateModified',0)
                 ))
         except requests.exceptions.RequestException as e:
-            log(f"Error fetching category data: {e}")
+            log(f"Error fetching category data for page {i//50 + 1}: {e}")
+        except Exception as e:
+            log(f"Unexpected error in get_mods: {e}")
     log(f"Fetched {len(mods)} mods from category {category['name']} count {category['count']}.")
     sort_by_date_difference(mods)
     return mods[0:SAMPLE_LIMIT] if DEBUG_MODE else mods
@@ -301,7 +345,10 @@ def get_files(mod: Mod) -> list[File]:
     files: list[File] = [] 
     #file format: url:_sDownloadUrl, id:_idRow, size:_nFilesize, date_added:_tsDateAdded, 
     try:
-        response = requests.get(API_BASE_URL.format(MOD_SUBURL.format(mod['id'])), timeout=30)
+        response = session.get(
+            API_BASE_URL.format(MOD_SUBURL.format(mod['id'])), 
+            timeout=REQUEST_TIMEOUT
+        )
         response.raise_for_status()
         data = response.json()
         records = data.get('_aFiles', []) + data.get('_aArchivedFiles', [])
@@ -317,6 +364,8 @@ def get_files(mod: Mod) -> list[File]:
                 ))
     except requests.exceptions.RequestException as e:
         log(f"Error fetching mod profile data: {e}")
+    except Exception as e:
+        log(f"Unexpected error in get_files: {e}")
     if files:
         files.sort(key=lambda x: x['added'])
     return files[0:SAMPLE_LIMIT] if DEBUG_MODE else files
@@ -343,17 +392,24 @@ def download_file(url: str, name: str) -> bool:
     log(f"Downloading {url}...")
     save_path = DOWNLOAD_DIR / name
     try:
-        response = requests.get(url, stream=True, timeout=30)
+        response = session.get(url, stream=True, timeout=REQUEST_TIMEOUT)
         # Check for HTTP errors (e.g., 404 Not Found)
         response.raise_for_status() 
         
         with open(save_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+                if chunk:  # filter out keep-alive chunks
+                    f.write(chunk)
         log("Download complete.")
         return True
+    except requests.exceptions.Timeout:
+        log(f"Timeout downloading {url}")
+        return False
     except requests.exceptions.RequestException as e:
         log(f"Error downloading {url}: {e}")
+        return False
+    except Exception as e:
+        log(f"Unexpected error downloading {url}: {e}")
         return False
 
 def extract_file(name:str) -> bool:
@@ -372,21 +428,24 @@ def extract_file(name:str) -> bool:
             result = subprocess.run(
                 ['unzip', '-q', '-o', str(src), '-d', str(tgt)],
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=300  # 5 minute timeout
             )
         elif src.suffix == '.rar':
             # Use unrar command (supports RAR5 format)
             result = subprocess.run(
                 ['unrar', 'x', '-y', '-o+', str(src), str(tgt) + '/'],
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=300  # 5 minute timeout
             )
         elif src.suffix == '.7z':
             # Use 7z command from p7zip-full
             result = subprocess.run(
                 ['7z', 'x', str(src), f'-o{str(tgt)}', '-y'],
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=300  # 5 minute timeout
             )
         else:
             log(f"Unsupported file type: {src.suffix}")
@@ -403,7 +462,10 @@ def extract_file(name:str) -> bool:
             
         log("Extraction complete.")
         return True
-        
+    
+    except subprocess.TimeoutExpired:
+        log(f"Timeout extracting {src.name} (took more than 5 minutes)")
+        return False
     except FileNotFoundError as e:
         log(f"Error: Required extraction tool not found.")
         log("Install with: sudo apt install unzip unrar p7zip-full")
