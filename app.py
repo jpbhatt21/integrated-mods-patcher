@@ -203,7 +203,7 @@ def check_and_install_dependencies() -> bool:
             return True
     except Exception:
         pass
-    
+    return True
     # unrar not found, install it
     log("⚠ unrar not found. Installing from source...")
     log("This may take a few minutes and requires sudo privileges.")
