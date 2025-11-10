@@ -83,7 +83,8 @@ REQUEST_TIMEOUT = 60
 # Gamebanana game category id
 GAME_IDS = {
     "WW": 29524,
-    "ZZ": 30305
+    "ZZ": 30305,
+    "GI": 18140
 }
 
 # NocoDB Configuration (from .env)
