@@ -53,9 +53,6 @@ DOWNLOAD_DIR = Path("download_temp")
 # A directory to extract archive contents into
 EXTRACT_DIR = Path("extract_temp")
 
-# List of URLs to download from
-FILE_URLS = []
-
 # Selected Game (from .env)
 GAME = os.getenv("GAME", "WW")
 
@@ -64,6 +61,10 @@ DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
 
 # Sample Limit (from .env)
 SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "1"))
+
+# Sleep to avoid rate limiting or ip bans
+SLEEP_BETWEEN_DOWNLOADS = 10
+
 
 # Gamebanana game category id
 GAME_IDS = {
@@ -506,7 +507,6 @@ def process_file(file: File):
         # 5. Delete zip/unzipped data (runs even if errors occurred)
         cleanup(name)
         log("-" * 40)
-        time.sleep(1) # Optional: short pause between downloads
     return file
 
 
@@ -561,10 +561,15 @@ def main2():
         if not cats:
             log("No categories found.")
             return 0
+        log (f"Fetched categories:")
+        for cat in cats:
+            log (f" - {cat['name']} (ID: {cat['id']}, Count: {cat['count']})")
+        log("-" * 40)
+        log(f"Starting scraping for game {GAME}...")
         for cat in cats:
             log(f"Category: {cat['name']} (ID: {cat['id']}, Count: {cat['count']})")
             mods = get_mods(cat)
-            log(f"Fetched {len(mods)} mods metadata.")
+            log(f"Fetched metadata for {len(mods)} mod(s).")
             for mod in mods:
                 log(f"Mod : {mod}")
                 files = get_files(mod)
@@ -578,6 +583,8 @@ def main2():
                     "Data": file_data
                 }
                 post(GAME, data)
+                log(f"Uploaded mod {mod['id']} data to NocoDB. Sleeping for {SLEEP_BETWEEN_DOWNLOADS} seconds...")
+                time.sleep(SLEEP_BETWEEN_DOWNLOADS)
         log("Scraping completed successfully!")
     except Exception as e:
         log(f"Error in main2: {e}")
