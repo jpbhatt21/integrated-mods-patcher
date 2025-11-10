@@ -1,3 +1,37 @@
+# Environment variables with secrets
+.env
+
+# Temporary directories
 download_temp/
 extract_temp/
 temp.py
+
+# Logs
+*.log
+scraper.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compiled source
+unrar/
+unrarsrc-*.tar.gz

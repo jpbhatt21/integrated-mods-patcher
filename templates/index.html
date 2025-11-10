@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GameBanana Scraper</title>
+    <style>
+        :root {
+            --wuwa-accent: #cdb896;
+            --zzz-accent: #efdd00;
+            --zzz-accent-2: #f68f36;
+
+            /* Common values across themes */
+            --foreground: oklch(0.985 0.001 106.423);
+            --card-foreground: oklch(0.985 0.001 106.423);
+            --popover: oklch(0.216 0.006 56.043);
+            --popover-foreground: oklch(0.985 0.001 106.423);
+            --primary: oklch(0.923 0.003 48.717);
+            --primary-foreground: oklch(0.216 0.006 56.043);
+            --secondary: oklch(0.268 0.007 34.298);
+            --secondary-foreground: oklch(0.985 0.001 106.423);
+            --muted: #837660;
+            --muted-foreground: oklch(0.709 0.01 56.259);
+            --accent-foreground: oklch(0.985 0.001 106.423);
+            --destructive: oklch(80.8% 0.114 19.571);
+            --warn: oklch(95.566% 0.0742 95.941);
+            --success: oklch(87.1% 0.15 154.449);
+            --link: oklch(80.9% 0.105 251.813);
+            --ring: oklch(0.553 0.013 58.071);
+            --chart-1: oklch(0.488 0.243 264.376);
+            --chart-2: oklch(0.696 0.17 162.48);
+            --chart-3: oklch(0.769 0.188 70.08);
+            --chart-4: oklch(0.627 0.265 303.9);
+            --chart-5: oklch(0.645 0.246 16.439);
+            --sidebar-foreground: oklch(0.985 0.001 106.423);
+            --sidebar-primary: oklch(0.488 0.243 264.376);
+            --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
+            --sidebar-accent: oklch(0.268 0.007 34.298);
+            --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
+            --sidebar-border: oklch(1 0 0 / 10%);
+            --sidebar-ring: oklch(0.553 0.013 58.071);
+            
+            --radius-main: 0.5rem;
+            --border-w-main: 1px;
+            --button: #2d2a28;
+            --background: oklch(0.147 0.004 49.25);
+            --card: oklch(21.612% 0.00611 55.916);
+            --accent: var(--wuwa-accent);
+            --border: #4e463a;
+            --input: oklch(100% 0.00011 271.152 / 0.15);
+            --sidebar: oklch(0.216 0.006 56.043);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--background);
+            height: 100%;
+            max-height: 100%;
+            overflow: hidden;
+            display:flex;
+            flex-direction: column;
+            padding: 20px;
+            color: var(--foreground);
+        }
+
+        .container {
+            background: var(--card);
+            border-radius: var(--radius-main);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            padding: 40px;
+            max-width: 1200px;
+            height: 100%;
+            max-height: 100%vh;
+            overflow:hidden;
+            width: 100%;
+            margin: 0 auto;
+            display:flex;
+            flex-direction: column;
+            border: var(--border-w-main) solid var(--border);
+        }
+
+        h1 {
+            color: var(--accent);
+            margin-bottom: 10px;
+            font-size: 2em;
+            text-align: center;
+            text-shadow: 0 0 10px rgba(205, 184, 150, 0.3);
+        }
+
+        .subtitle {
+            color: var(--muted-foreground);
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+
+        .status-card {
+            background: var(--popover);
+            border-radius: var(--radius-main);
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 0.95em;
+        }
+
+        .status-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: var(--muted-foreground);
+            font-weight: 500;
+        }
+
+        .status-value {
+            color: var(--card-foreground);
+            font-weight: 600;
+        }
+
+        .status-running {
+            color: var(--success);
+        }
+
+        .status-stopped {
+            color: var(--destructive);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 15px 30px;
+            border: var(--border-w-main) solid var(--border);
+            border-radius: var(--radius-main);
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-start {
+            background: var(--accent);
+            color: var(--primary-foreground);
+        }
+
+        .btn-start:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(205, 184, 150, 0.4);
+            filter: brightness(1.1);
+        }
+
+        .btn-start:disabled {
+            background: var(--muted);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .btn-refresh {
+            background: var(--button);
+            color: var(--accent);
+            border: var(--border-w-main) solid var(--accent);
+        }
+
+        .btn-refresh:hover {
+            background: var(--accent);
+            color: var(--primary-foreground);
+            transform: translateY(-2px);
+        }
+
+        .logs-section {
+            margin-top: 20px;
+        }
+
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .logs-title {
+            color: var(--accent);
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+
+        .logs-count {
+            color: var(--muted-foreground);
+            font-size: 0.9em;
+        }
+
+        .logs-container {
+            background: var(--background);
+            border: var(--border-w-main) solid var(--border);
+            border-radius: var(--radius-main);
+            padding: 15px;
+            height: 100%;
+            max-height: calc(100vh - 500px);
+            overflow-y: scroll;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            line-height: 1.6;
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .logs-container::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .logs-container::-webkit-scrollbar-track {
+            background: var(--secondary);
+            border-radius: 5px;
+        }
+
+        .logs-container::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 5px;
+        }
+
+        .logs-container::-webkit-scrollbar-thumb:hover {
+            background: var(--muted);
+        }
+
+        .log-entry {
+            color: var(--foreground);
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .log-entry:hover {
+            background: var(--popover);
+        }
+
+        .log-timestamp {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .log-message {
+            color: var(--muted-foreground);
+        }
+
+        .log-empty {
+            color: var(--muted);
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+        }
+
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: var(--radius-main);
+            text-align: center;
+            font-weight: 500;
+            display: none;
+            border: var(--border-w-main) solid;
+        }
+
+        .message.success {
+            background: var(--success);
+            color: var(--primary-foreground);
+            border-color: var(--success);
+        }
+
+        .message.error {
+            background: var(--destructive);
+            color: var(--primary-foreground);
+            border-color: var(--destructive);
+        }
+
+        .message.show {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--muted);
+            border-top: 2px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 GameBanana Scraper</h1>
+        <p class="subtitle">Monitor and control your scraping tasks</p>
+
+        <div class="status-card" id="statusCard">
+            <div class="status-item">
+                <span class="status-label">Status:</span>
+                <span class="status-value" id="runningStatus">Loading...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Logs in Memory:</span>
+                <span class="status-value" id="logCount">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Log File:</span>
+                <span class="status-value" id="logFile">-</span>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button class="btn-start" id="startBtn" onclick="startScraper()">
+                🚀 Start Scraper
+            </button>
+            <button class="btn-refresh" onclick="refreshStatus()">
+                🔄 Refresh
+            </button>
+        </div>
+
+        <div class="logs-section">
+            <div class="logs-header">
+                <span class="logs-title">📋 Logs</span>
+                <span class="logs-count" id="logsCount">0 entries</span>
+            </div>
+            <div class="logs-container" id="logsContainer">
+                <div class="log-empty">No logs available yet. Start the scraper to see logs.</div>
+            </div>
+        </div>
+
+        <div class="message" id="message"></div>
+    </div>
+
+    <script>
+        let isRunning = false;
+
+        // Fetch status on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            refreshStatus();
+            // Auto-refresh every 5 seconds
+            setInterval(refreshStatus, 5000);
+        });
+
+        // Helper function to scroll logs to bottom
+        function scrollLogsToBottom() {
+            const logsContainer = document.getElementById('logsContainer');
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+
+        async function refreshStatus() {
+            const statusCard = document.getElementById('statusCard');
+            statusCard.classList.add('loading');
+
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    isRunning = data.is_running;
+                    
+                    // Update status display
+                    const statusEl = document.getElementById('runningStatus');
+                    statusEl.textContent = isRunning ? '🟢 Running' : '🔴 Stopped';
+                    statusEl.className = 'status-value ' + (isRunning ? 'status-running' : 'status-stopped');
+
+                    // Update log count
+                    document.getElementById('logCount').textContent = data.log_count;
+
+                    // Update log file status
+                    document.getElementById('logFile').textContent = data.log_file_exists ? '✅ Exists' : '❌ Not Found';
+
+                    // Update button state
+                    const startBtn = document.getElementById('startBtn');
+                    startBtn.disabled = isRunning;
+                    startBtn.innerHTML = isRunning ? '⏳ Running...' : '🚀 Start Scraper';
+
+                    // Update logs display
+                    updateLogs(data.logs || []);
+                    
+                    // Scroll to bottom after updating logs
+                    scrollLogsToBottom();
+                }
+            } catch (error) {
+                showMessage('Failed to fetch status: ' + error.message, 'error');
+            } finally {
+                statusCard.classList.remove('loading');
+            }
+        }
+
+        function updateLogs(logs) {
+            const logsContainer = document.getElementById('logsContainer');
+            const logsCount = document.getElementById('logsCount');
+            
+            if (!logs || logs.length === 0) {
+                logsContainer.innerHTML = '<div class="log-empty">No logs available yet. Start the scraper to see logs.</div>';
+                logsCount.textContent = '0 entries';
+                return;
+            }
+
+            logsCount.textContent = `${logs.length} entries`;
+
+            // Build HTML for logs
+            let logsHTML = '';
+            logs.forEach(log => {
+                // Parse log entry [timestamp] message
+                const match = log.match(/^\[(.*?)\]\s*(.*)$/);
+                if (match) {
+                    const timestamp = match[1];
+                    const message = match[2];
+                    logsHTML += `<div class="log-entry"><span class="log-timestamp">[${timestamp}]</span> <span class="log-message">${escapeHtml(message)}</span></div>`;
+                } else {
+                    logsHTML += `<div class="log-entry"><span class="log-message">${escapeHtml(log)}</span></div>`;
+                }
+            });
+
+            logsContainer.innerHTML = logsHTML;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function startScraper() {
+            const startBtn = document.getElementById('startBtn');
+            const originalText = startBtn.innerHTML;
+            startBtn.innerHTML = 'Starting<span class="spinner"></span>';
+            startBtn.disabled = true;
+
+            try {
+                const response = await fetch('/start', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showMessage('✅ ' + data.message, 'success');
+                    // Refresh status after a short delay
+                    setTimeout(() => {
+                        refreshStatus();
+                    }, 1000);
+                } else {
+                    showMessage('⚠️ ' + data.message, 'error');
+                    startBtn.disabled = false;
+                    startBtn.innerHTML = originalText;
+                }
+            } catch (error) {
+                showMessage('❌ Failed to start scraper: ' + error.message, 'error');
+                startBtn.disabled = false;
+                startBtn.innerHTML = originalText;
+            }
+        }
+
+        function showMessage(text, type) {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = text;
+            messageEl.className = 'message ' + type + ' show';
+
+            // Hide message after 5 seconds
+            setTimeout(() => {
+                messageEl.classList.remove('show');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
