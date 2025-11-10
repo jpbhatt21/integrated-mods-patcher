@@ -370,10 +370,6 @@
                 <span class="status-value" id="processedCount">0</span>
             </div>
             <div class="status-item">
-                <span class="status-label">Total mods (all categories):</span>
-                <span class="status-value" id="totalMods">0</span>
-            </div>
-            <div class="status-item">
                 <span class="status-label">Overall progress:</span>
                 <span class="status-value" id="overallProgress">0%</span>
             </div>
@@ -455,7 +451,7 @@
                     // Update total mods and overall progress
                     const totalMods = data.progress && data.progress.totalMods ? data.progress.totalMods : 0;
                     const totalCompleted = data.progress && data.progress.totalCompleted ? data.progress.totalCompleted : 0;
-                    document.getElementById('totalMods').textContent = totalMods;
+                    //document.getElementById('totalMods').textContent = totalMods;
                     const overallPct = totalMods > 0 ? Math.round((totalCompleted / totalMods) * 100) : 0;
                     document.getElementById('overallProgress').textContent = `${overallPct}% (${totalCompleted}/${totalMods})`;
 
