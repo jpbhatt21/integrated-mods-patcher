@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from waitress import serve
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Load environment variables
 load_dotenv()
@@ -34,6 +35,11 @@ is_running = False  # Track if scraper is currently running
 
 # --- Custom Data Types ---
 
+done=0
+cat=""
+cat_done=0
+cat_total=0
+total=0
 
 class Category(TypedDict):
     """Represents a GameBanana category."""
@@ -78,6 +84,9 @@ SLEEP_BETWEEN_DOWNLOADS = 2
 
 # Request timeout (seconds)
 REQUEST_TIMEOUT = 60
+
+# Maximum number of concurrent threads for file processing
+MAX_THREADS = 4
 
 
 # Gamebanana game category id
@@ -143,6 +152,7 @@ def get_status():
     return jsonify({
         "status": "success",
         "is_running": is_running,
+        "message": f"Category: '{cat}' | Progress:  {cat_done}/{cat_total} ({cat_done / cat_total * 100 if cat_total > 0 else 0:.2f}%) | Overall Progress: {done}/{total} ({done / total * 100 if total > 0 else 0:.2f}%)" if is_running else "",
         "log_count": 0,
         "log_file_exists": False,
         "logs": []
@@ -243,6 +253,7 @@ def check_and_install_dependencies() -> bool:
 # --- Helper Functions ---
 def get_cats(game: str) -> None:
     """Initializes the CATEGORIES list with category data from GameBanana API."""
+    global total
     cats = []
     try:
         response = session.get(
@@ -252,6 +263,7 @@ def get_cats(game: str) -> None:
         response.raise_for_status()
         data = response.json()
         for datum in data:
+            total += int(datum['_nItemCount'])
             cats.append(Category(
                 name=datum['_sName'],
                 id=datum['_idRow'],
@@ -525,26 +537,42 @@ def process_file(file: File):
 
 
 def batch_process_files(files: list[File]):
-    """Process files sequentially."""
+    """Process files concurrently using a thread pool."""
     processed_files = {}
     
-    for file in files:
-        print(f"Processing file: {file['id']}")
-        file = process_file(file) or file
+    # Use ThreadPoolExecutor for concurrent processing
+    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        # Submit all file processing tasks
+        future_to_file = {executor.submit(process_file, file): file for file in files}
         
-        if file["data"]["status"] == "success":
-            print(f"Processed file {file['id']} successfully with {file['data']['ini_count']} INI files.")
-        else:
-            print(f"Failed to process file {file['id']}: {file['data']['reason']}")
-        
-        processed_files[file["id"]] = file["data"]
+        # Wait for all tasks to complete and collect results
+        for future in as_completed(future_to_file):
+            original_file = future_to_file[future]
+            try:
+                file = future.result()
+                if file is None:
+                    file = original_file
+                
+                if file["data"]["status"] == "success":
+                    print(f"Processed file {file['id']} successfully with {file['data']['ini_count']} INI files.")
+                else:
+                    print(f"Failed to process file {file['id']}: {file['data']['reason']}")
+                
+                processed_files[file["id"]] = file["data"]
+            except Exception as e:
+                print(f"Exception occurred while processing file {original_file['id']}: {e}")
+                processed_files[original_file["id"]] = {
+                    "status": "failed",
+                    "reason": f"err: exception - {e}",
+                    "added": original_file["added"]
+                }
     
     return processed_files
 
 
 def main2():
     """Main scraper function."""
-    global is_running
+    global is_running, cat, cat_done, cat_total, done
     try:
         DOWNLOAD_DIR.mkdir(exist_ok=True, parents=True)
         EXTRACT_DIR.mkdir(exist_ok=True, parents=True)
@@ -553,13 +581,21 @@ def main2():
             print("No categories found.")
             return 0
         print(f"Fetched categories:")
-        for cat in cats:
-            print(f" - {cat['name']} (ID: {cat['id']}, Count: {cat['count']})")
+        for catg in cats:
+            print(f" - {catg['name']} (ID: {catg['id']}, Count: {catg['count']})")
         print("-" * 40)
         print(f"Starting scraping for game {GAME}...")
-        for cat in cats:
-            print(f"Category: {cat['name']} (ID: {cat['id']}, Count: {cat['count']})")
-            mods = get_mods(cat)
+        for catg in cats:
+            if(catg["name"]=="Aether"):
+                done += int(catg["count"])
+                print("Skipping Aether category")
+                continue
+
+            cat=catg["name"]
+            cat_total=catg["count"]
+            cat_done=0
+            print(f"Category: {catg['name']} (ID: {catg['id']}, Count: {catg['count']})")
+            mods = get_mods(catg)
             print(f"Fetched metadata for {len(mods)} mod(s).")
             for mod in mods:
                 print(f"Mod : {mod}")
@@ -568,12 +604,14 @@ def main2():
                 file_data=batch_process_files(files)
                 data ={
                     "Id" : mod['id'],
-                    "Category" : cat['name'],
+                    "Category" : catg['name'],
                     "Added": mod['added'],
                     "Modified": mod['modified'],
                     "Data": file_data
                 }
                 post(GAME, data)
+                cat_done+=1
+                done+=1
                 print(f"Uploaded mod {mod['id']} data to NocoDB. Sleeping for {SLEEP_BETWEEN_DOWNLOADS} seconds...")
                 time.sleep(SLEEP_BETWEEN_DOWNLOADS)
         print("Scraping completed successfully!")
