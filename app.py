@@ -8,6 +8,7 @@ from flask import Flask, jsonify, render_template
 import threading
 from datetime import datetime
 from dotenv import load_dotenv
+from waitress import serve
 
 # Load environment variables
 load_dotenv()
@@ -57,7 +58,7 @@ EXTRACT_DIR = Path("extract_temp")
 GAME = os.getenv("GAME", "WW")
 
 # Debugging (from .env)
-DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
+DEBUG_MODE = os.getenv("DEBUG_MODE", "False").lower() == "true"
 
 # Sample Limit (from .env)
 SAMPLE_LIMIT = int(os.getenv("SAMPLE_LIMIT", "1"))
@@ -622,5 +623,6 @@ if __name__ == "__main__":
     log("Use /status to check status")
     log("=" * 50)
     
-    # Start Flask app
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Start Flask app with Waitress (production-ready WSGI server)
+    log("Starting Waitress server on http://0.0.0.0:5000")
+    serve(app, host='0.0.0.0', port=5000, threads=4)
