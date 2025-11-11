@@ -17,3 +17,11 @@ wheels/
 download_temp/
 extract_temp/
 .DS_Store
+.env.*
+.env
+Dockerfile
+docker-compose.yml
+node_modules/
+npm-debug.log
+*.env
+stack.env
