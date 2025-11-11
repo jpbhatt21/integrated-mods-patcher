@@ -60,4 +60,4 @@ RUN mkdir -p download_temp extract_temp
 EXPOSE 5000
 
 # Use waitress to serve the Flask app (expects `app:app` in repo root)
-CMD "python3 server.py init && python3 server.py start"
+CMD ["bash", "-c", "python3 server.py init && python3 server.py start"]
