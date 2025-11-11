@@ -40,6 +40,7 @@ cat=""
 cat_done=0
 cat_total=0
 total=0
+table_data={}
 
 class Category(TypedDict):
     """Represents a GameBanana category."""
@@ -99,6 +100,7 @@ GAME_IDS = {
 # NocoDB Configuration (from .env)
 NOCO_BASE_URL = os.getenv("NOCO_BASE_URL", "https://db.wwmm.bhatt.jp/api/v1/db/data/noco/pnifvzk8oa0fglo/{}")
 NOCO_VARS = {
+    "Base": os.getenv("NOCO_BASE", ""),
     "WW": os.getenv("NOCO_WW", ""),
     "ZZ": os.getenv("NOCO_ZZ", ""),
     "GI": os.getenv("NOCO_GI", ""),
@@ -157,6 +159,35 @@ def get_status():
         "log_file_exists": False,
         "logs": []
     })
+def list_table(table:str) -> dict:
+    """Lists records from a NocoDB table."""
+    url = f"https://db.wwmm.bhatt.jp/api/v3/data/{NOCO_VARS['Base']}/{NOCO_VARS[table]}/records"
+    headers = {
+        "Content-Type": "application/json",
+        "xc-token": NOCO_VARS["bearer"]
+    }
+    data={}
+    count=0
+    while url:
+        print(f"Getting NocoDB table {table} page {count}")
+        try:
+            response = session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            result = response.json()
+            data.update({record['id']: record for record in result.get('records', [])})
+            url = result.get('next')
+        except requests.exceptions.Timeout:
+            print(f"Timeout listing NocoDB table {table}")
+            break
+        except requests.exceptions.RequestException as e:
+            print(f"Error listing NocoDB table {table}: {e}")
+            break
+        except Exception as e:
+            print(f"Unexpected error listing NocoDB: {e}")
+            break
+        count+=1
+    return data
+    
 
 # --- NocoDB Functions ---
 def post(table:str, data: dict) -> dict:
@@ -577,10 +608,12 @@ def main2():
         DOWNLOAD_DIR.mkdir(exist_ok=True, parents=True)
         EXTRACT_DIR.mkdir(exist_ok=True, parents=True)
         cats=get_cats(GAME)
-        response = requests.get("https://db.wwmm.bhatt.jp/api/v2/tables/{}/records/count".format(NOCO_VARS[GAME]), headers={
-            "xc-token": NOCO_VARS["bearer"]
-        })
-        prev_done = response.json().get("count", 0)
+        # response = requests.get("https://db.wwmm.bhatt.jp/api/v2/tables/{}/records/count".format(NOCO_VARS[GAME]), headers={
+        #     "xc-token": NOCO_VARS["bearer"]
+        # })
+        # prev_done = response.json().get("count", 0)
+        table_data=list_table(GAME)
+        print(f"Previous done: {len(table_data)}")
         if not cats:
             print("No categories found.")
             return 0
@@ -591,18 +624,18 @@ def main2():
         print(f"Starting scraping for game {GAME}...")
         for catg in cats:
             cat_total=catg["count"]
-            if(done+cat_total<=prev_done):
-                done+=cat_total
-                cat_done=cat_total
-                print(f"Skipping category {catg['name']} as already done.")
-                continue
+            # if(done+cat_total<=prev_done):
+            #     done+=cat_total
+            #     cat_done=cat_total
+            #     print(f"Skipping category {catg['name']} as already done.")
+            #     continue
             cat=catg["name"]
             cat_done=0
             print(f"Category: {catg['name']} (ID: {catg['id']}, Count: {catg['count']})")
             mods = get_mods(catg)
             print(f"Fetched metadata for {len(mods)} mod(s).")
             for mod in mods:
-                if(done<=prev_done):
+                if(table_data.get(str(mod['id']))):
                     done+=1
                     cat_done+=1
                     print(f"Skipping mod {mod['id']} as already done.")
