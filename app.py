@@ -577,6 +577,10 @@ def main2():
         DOWNLOAD_DIR.mkdir(exist_ok=True, parents=True)
         EXTRACT_DIR.mkdir(exist_ok=True, parents=True)
         cats=get_cats(GAME)
+        response = requests.get("https://db.wwmm.bhatt.jp/api/v2/tables/{}/records/count".format(NOCO_VARS[GAME]), headers={
+            "xc-token": NOCO_VARS["bearer"]
+        })
+        prev_done = response.json().get("count", 0)
         if not cats:
             print("No categories found.")
             return 0
@@ -586,18 +590,23 @@ def main2():
         print("-" * 40)
         print(f"Starting scraping for game {GAME}...")
         for catg in cats:
-            if(catg["name"]=="Aether"):
-                done += int(catg["count"])
-                print("Skipping Aether category")
-                continue
-
-            cat=catg["name"]
             cat_total=catg["count"]
+            if(done+cat_total<=prev_done):
+                done+=cat_total
+                cat_done=cat_total
+                print(f"Skipping category {catg['name']} as already done.")
+                continue
+            cat=catg["name"]
             cat_done=0
             print(f"Category: {catg['name']} (ID: {catg['id']}, Count: {catg['count']})")
             mods = get_mods(catg)
             print(f"Fetched metadata for {len(mods)} mod(s).")
             for mod in mods:
+                if(done<=prev_done):
+                    done+=1
+                    cat_done+=1
+                    print(f"Skipping mod {mod['id']} as already done.")
+                    continue
                 print(f"Mod : {mod}")
                 files = get_files(mod)
                 print(f"Mod ID {mod['id']} has {len(files)} files.")
