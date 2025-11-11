@@ -4,7 +4,9 @@
 # Temporary directories
 download_temp/
 extract_temp/
-temp.py
+temp.*
+temp_*.*
+*_temp_*.*
 
 # Logs
 *.log

@@ -1,0 +1,22 @@
+{
+  "hashA": {
+    "hashC": 1,
+    "hashF": 2
+  },
+  "hashF": {
+    "hashA": 0,
+    "hashC": 1
+  },
+  "hashG": {
+    "hashE": 0
+  },
+  "hashE": {
+    "hashG": 2
+  },
+  "hashB": {},
+  "hashD": {},
+  "hashC": {
+    "hashA": 0,
+    "hashF": 2
+  }
+}

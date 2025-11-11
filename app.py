@@ -635,7 +635,7 @@ def main2():
             mods = get_mods(catg)
             print(f"Fetched metadata for {len(mods)} mod(s).")
             for mod in mods:
-                if(table_data.get(str(mod['id']))):
+                if(mod['id']!="Mod/592745" and table_data.get(str(mod['id']))):
                     done+=1
                     cat_done+=1
                     print(f"Skipping mod {mod['id']} as already done.")
