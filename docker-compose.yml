@@ -10,8 +10,8 @@ services:
     environment:
       - FLASK_ENV=production
     volumes:
-      - download_temp:/app/download_temp
-      - extract_temp:/app/extract_temp
+      #- download_temp:/app/download_temp
+      #- extract_temp:/app/extract_temp
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/status"]
@@ -19,6 +19,6 @@ services:
       timeout: 10s
       retries: 3
 
-volumes:
-  download_temp:
-  extract_temp:
+#volumes:
+#  download_temp:
+#  extract_temp:
