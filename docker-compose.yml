@@ -9,7 +9,7 @@ services:
       - stack.env
     environment:
       - FLASK_ENV=production
-    volumes:
+    #volumes:
       #- download_temp:/app/download_temp
       #- extract_temp:/app/extract_temp
     restart: unless-stopped
