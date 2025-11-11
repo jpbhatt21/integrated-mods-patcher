@@ -15,7 +15,6 @@ services:
     volumes:
       - download_temp:/app/download_temp
       - extract_temp:/app/extract_temp
-      - templates:/app/templates
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/status"]
@@ -26,4 +25,3 @@ services:
 volumes:
   download_temp:
   extract_temp:
-  templates:

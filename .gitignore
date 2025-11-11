@@ -41,3 +41,5 @@ Thumbs.db
 # Compiled source
 unrar/
 unrarsrc-*.tar.gz
+*.env
+stack.env
