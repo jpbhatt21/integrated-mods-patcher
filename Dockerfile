@@ -55,9 +55,9 @@ RUN pip install --no-index --find-links=/wheels -r requirements.txt \
 COPY . .
 
 # Create directories used by the app
-RUN mkdir -p download_temp extract_temp templates
+RUN mkdir -p download_temp extract_temp
 
 EXPOSE 5000
 
 # Use waitress to serve the Flask app (expects `app:app` in repo root)
-CMD ["waitress-serve", "--host=0.0.0.0", "--port=5000", "app:app"]
+CMD "python3 server.py init && python3 server.py start"
