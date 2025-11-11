@@ -1,11 +1,8 @@
-version: "3.8"
-
 services:
   web:
     build:
       context: .
       dockerfile: Dockerfile
-    image: integrated-mods-patcher:latest
     ports:
       - "5000:5000"
     env_file:
