@@ -189,10 +189,10 @@ def fix():
     broken_mods = get_recr(query_params={'where': '(Data, like, err: dl/ex failed)'})
     broken_files=[]
     file_to_mod={}
-    for mod in broken_mods:
-        if(mod["Id"]=="Mod/616624"):
-            broken_mods=[mod]
-            break
+    # for mod in broken_mods:
+    #     if(mod["Id"]=="Mod/616624"):
+    #         broken_mods=[mod]
+    #         break
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         # Submit all file processing tasks
         future_to_mod = {executor.submit(get_broken_files, mod): mod for mod in broken_mods} 
@@ -210,7 +210,7 @@ def fix():
                 log(f"Exception occurred while processing mod {original_mod['Id']}: {e}", level="error")
     
     print(f"Total broken files to fix: {len(broken_files)}, first file: {broken_files[0] if broken_files else 'N/A'}")
-    fixed_files = batch_process_files(broken_files[0:1])
+    fixed_files = batch_process_files(broken_files)
     mod_patch={}
     for id,data in fixed_files.items():
         mod_id = file_to_mod.get(id)
@@ -225,9 +225,9 @@ def fix():
         if not get_mod_from_db:
             continue
         mod_data = json.loads(get_mod_from_db.get('Data',"{}"))
-        log(mod_data,level="info")
+        # log(mod_data,level="info")
         mod_data.update(files_data)
-        log(mod_data,level="info")
+        # log(mod_data,level="info")
         log(f"Fetched mod {mod_id} from DB for patching",level="info")
         patch_data.append({
             "id": mod_id,
@@ -236,9 +236,9 @@ def fix():
             }
         })
         break
-    log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
+    # log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
     if(patch_data):
-        log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
+        log(f"Prepared patch data for {len(patch_data)} mods.", level="info")
         # return
         res=db.patch('RECORDS', bearer=BEARER, table=GAME, data=patch_data)
         log(f"Patch response: {res.status_code} - {res.text}", level="info")
