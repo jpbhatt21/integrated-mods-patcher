@@ -206,7 +206,7 @@ def fix():
                 log(f"Exception occurred while processing mod {original_mod['Id']}: {e}", level="error")
     
     print(f"Total broken files to fix: {len(broken_files)}, first file: {broken_files[0] if broken_files else 'N/A'}")
-    fixed_files = batch_process_files(broken_files)
+    fixed_files = batch_process_files(broken_files[0:1])
     mod_patch={}
     for id,data in fixed_files.items():
         mod_id = file_to_mod.get(id)
