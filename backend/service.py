@@ -226,7 +226,7 @@ def fix():
             continue
         mod_data = json.loads(get_mod_from_db.get('Data',"{}"))
         log(mod_data,level="info")
-        # mod_data.update(files_data)
+        mod_data.update(files_data)
         log(mod_data,level="info")
         log(f"Fetched mod {mod_id} from DB for patching",level="info")
         patch_data.append({
@@ -239,7 +239,7 @@ def fix():
     log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
     if(patch_data):
         log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
-        return
+        # return
         res=db.patch('RECORDS', bearer=BEARER, table=GAME, data=patch_data)
         log(f"Patch response: {res.status_code} - {res.text}", level="info")
     return True
