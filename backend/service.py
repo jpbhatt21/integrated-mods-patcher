@@ -238,9 +238,18 @@ def fix():
     # log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
     if(patch_data):
         log(f"Prepared patch data for {len(patch_data)} mods.", level="info")
-        # return
-        res=db.patch('RECORDS', bearer=BEARER, table=GAME, data=patch_data)
-        log(f"Patch response: {res.status_code} - {res.text}", level="info")
+        # Batch patch data into groups of 10
+        batch_size = 10
+        for i in range(0, len(patch_data), batch_size):
+            batch = patch_data[i:i+batch_size]
+            log(f"Patching batch {i//batch_size + 1} with {len(batch)} records...", level="info")
+            res = db.patch('RECORDS', bearer=BEARER, table=GAME, data={"records": batch})
+            log(f"Patch response: {res.status_code} - {res.text}", level="info")
+            if res.status_code == 200:
+                log(f"Successfully patched batch {i//batch_size + 1}", level="info")
+            else:
+                log(f"Failed to patch batch {i//batch_size + 1}", level="error")
+            time.sleep(SLEEP_TIME)  # Sleep between batches
     return True
 
 
