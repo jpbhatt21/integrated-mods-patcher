@@ -226,7 +226,7 @@ def fix():
             continue
         mod_data = json.loads(get_mod_from_db.json().get('fields',{}).get('Data',"{}"))
         log(mod_data,level="info")
-        mod_data.update(files_data)
+        # mod_data.update(files_data)
         log(mod_data,level="info")
         log(f"Fetched mod {mod_id} from DB for patching",level="info")
         patch_data.append({
