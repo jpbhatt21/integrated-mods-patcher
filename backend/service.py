@@ -231,7 +231,7 @@ def fix():
         })
         break
     if(patch_data):
-        db.patch('RECORDS', bearer=BEARER, table=GAME, data={"records":patch_data})
+        db.patch('RECORDS', bearer=BEARER, table=GAME, data=patch_data)
     return True
 
 
