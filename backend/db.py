@@ -38,6 +38,7 @@ def patch(ep, bearer=None, table="",record="", data=None):
     # URL-encode the record parameter
     encoded_record = quote(str(record), safe='') if record else record
     url = NOCO_DB_API_URL.format(endpoint.format(NOCO_DB_BASE, NOCO_DB_TABLES[table], encoded_record)) if endpoint else ep
+    print(f"PATCH URL: {url} with data: {data}")
     return session.patch(
         url,
         headers=headers,

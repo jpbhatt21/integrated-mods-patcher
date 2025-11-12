@@ -189,6 +189,10 @@ def fix():
     broken_mods = get_recr(query_params={'where': '(Data, like, err: dl/ex failed)'})
     broken_files=[]
     file_to_mod={}
+    for mod in broken_mods:
+        if(mod["Id"]=="Mod/616624"):
+            broken_mods=[mod]
+            break
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         # Submit all file processing tasks
         future_to_mod = {executor.submit(get_broken_files, mod): mod for mod in broken_mods} 
@@ -221,8 +225,10 @@ def fix():
         if not get_mod_from_db.status_code==200:
             continue
         mod_data = json.loads(get_mod_from_db.json().get('fields',{}).get('Data',"{}"))
+        log(mod_data,level="info")
         mod_data.update(files_data)
-        log(f"Fetched mod {mod_id} from DB for patching ;",level="info")
+        log(mod_data,level="info")
+        log(f"Fetched mod {mod_id} from DB for patching",level="info")
         patch_data.append({
             "id": mod_id,
             "fields":{
@@ -230,8 +236,11 @@ def fix():
             }
         })
         break
+    log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
     if(patch_data):
-        db.patch('RECORDS', bearer=BEARER, table=GAME, data=patch_data)
+        log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
+        res=db.patch('RECORDS', bearer=BEARER, table=GAME, data=patch_data)
+        log(f"Patch response: {res.status_code} - {res.text}", level="info")
     return True
 
 
