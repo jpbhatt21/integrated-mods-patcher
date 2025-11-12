@@ -1,3 +1,4 @@
+from flask import json
 import requests
 import os
 import shutil
@@ -136,6 +137,105 @@ def cancel_task():
     log("Task cancellation requested.", level="info")
     return True
 
+import requests
+import re # Import regular expressions
+
+
+
+def get_recr(query_params=None):
+    data = []
+    count=0
+    response = db.get('RECORDS', bearer=BEARER, table=GAME, query_params=query_params)
+    while True:
+        log(f"Fetching page {count} of NocoDB table {GAME}", level="info")
+        try:
+            response.raise_for_status()
+            result = response.json()
+            data.extend({"Id": record.get('id'), **record.get('fields', {})} for record in result.get('records', []))
+            url = result.get('next')
+            if not url:
+                break
+            response = db.get(url, bearer=BEARER)
+        except requests.exceptions.Timeout:
+            log(f"Timeout listing NocoDB table {GAME}", level="error")
+            break
+        except requests.exceptions.RequestException as e:
+            log(f"Error listing NocoDB table {GAME}: {e}", level="error")
+            break
+        except Exception as e:
+            log(f"Unexpected error listing NocoDB: {e}", level="error")
+            break
+        count+=1
+    return data
+
+
+def update():
+    records = list(TABLE_DATA.values())
+    pass
+
+def get_broken_files(mod):
+    res=[]
+    mod_id=mod['Id']
+    data=json.loads(mod['Data'])
+    files = {
+        str(item["id"]): item for item in get_files({"id":mod_id})
+    }
+    for file_id, file_data in data.items():
+        if file_data.get('status')=='failed' and file_data.get('reason','').startswith('err: dl/ex failed') and file_id in files:
+            res.append(files[file_id])
+    return res
+
+def fix():
+    broken_mods = get_recr(query_params={'where': '(Data, like, err: dl/ex failed)'})
+    broken_files=[]
+    file_to_mod={}
+    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        # Submit all file processing tasks
+        future_to_mod = {executor.submit(get_broken_files, mod): mod for mod in broken_mods} 
+        # Wait for all tasks to complete and collect results
+        for future in as_completed(future_to_mod):
+            original_mod = future_to_mod[future]
+            try:
+                files = future.result()
+                if files is None:
+                    files = original_mod 
+                for file in files:
+                    file_to_mod[file['id']]=file['parent_id']
+                broken_files.extend(files)
+            except Exception as e:
+                log(f"Exception occurred while processing mod {original_mod['Id']}: {e}", level="error")
+    
+    print(f"Total broken files to fix: {len(broken_files)}, first file: {broken_files[0] if broken_files else 'N/A'}")
+    fixed_files = batch_process_files(broken_files)
+    mod_patch={}
+    for id,data in fixed_files.items():
+        mod_id = file_to_mod.get(id)
+        if not mod_id:
+            continue
+        if mod_id not in mod_patch:
+            mod_patch[mod_id]={}
+        mod_patch[mod_id][str(id)] = data
+    patch_data=[]
+    for mod_id, files_data in mod_patch.items():
+        get_mod_from_db = db.get('RECORDS', bearer=BEARER, table=GAME, record=str(mod_id))
+        if not get_mod_from_db.status_code==200:
+            continue
+        mod_data = json.loads(get_mod_from_db.json().get('fields',{}).get('Data',"{}"))
+        mod_data.update(files_data)
+        log(f"Fetched mod {mod_id} from DB for patching ;",level="info")
+        patch_data.append({
+            "id": mod_id,
+            "fields":{
+                "Data": mod_data
+            }
+        })
+        break
+    if(patch_data):
+        db.patch('RECORDS', bearer=BEARER, table=GAME, data={"records":patch_data})
+    return True
+
+
+
 def run():
     global PROGRESS,TASK
     if not CATEGORIES:
@@ -220,15 +320,16 @@ def start_service(task="run",game="WW", bearer="",threads=4,sleep=2):
         return True
     DOWNLOAD_DIR.mkdir(exist_ok=True, parents=True)
     EXTRACT_DIR.mkdir(exist_ok=True, parents=True)
+    log(f"Starting task: {TASK} for {GAME} with a maximum of {MAX_THREADS} threads and sleep time {SLEEP_TIME}s", level="info")
+    if TASK == "Fixing":
+        threading.Thread(target=fix).start()
+        return True
     get_cats()
     get_full_table_data()
-    log(f"Starting task: {TASK} for {GAME} with a maximum of {MAX_THREADS} threads and sleep time {SLEEP_TIME}s", level="info")
     if TASK == "Running":
         threading.Thread(target=run).start()    
-    elif TASK == "Fixing":
-        time.sleep(3)  # Simulate a shorter task
     elif TASK == "Updating":
-        time.sleep(6)  # Simulate an update task
+        threading.Thread(target=update).start()
 
     return True
 
@@ -264,28 +365,9 @@ def get_cats(passive=False) -> None:
 def get_full_table_data():
     global TABLE_DATA
     data={}
-    count=0
-    response = db.get('RECORDS', bearer=BEARER, table=GAME)
-    while True:
-        log(f"Fetching page {count} of NocoDB table {GAME}", level="info")
-        try:
-            response.raise_for_status()
-            result = response.json()
-            data.update({record['id']: record for record in result.get('records', [])})
-            url = result.get('next')
-            if not url:
-                break
-            response = db.get(url, bearer=BEARER)
-        except requests.exceptions.Timeout:
-            log(f"Timeout listing NocoDB table {GAME}", level="error")
-            break
-        except requests.exceptions.RequestException as e:
-            log(f"Error listing NocoDB table {GAME}: {e}", level="error")
-            break
-        except Exception as e:
-            log(f"Unexpected error listing NocoDB: {e}", level="error")
-            break
-        count+=1
+    records = get_recr()
+    for record in records:
+         data[record['Id']] = record
     TABLE_DATA = data
     return data
     
@@ -392,7 +474,7 @@ def download_file(url: str, name: str) -> bool:
         return False
 
 def extract_file(name:str) -> bool:
-    """Extracts a .zip, .rar, or .7z file to a target directory using command-line tools."""
+    """Extracts a .zip, .rar, or .7z file to a target directory using 7z command-line tool."""
     import subprocess
     
     log(f"Extracting {name}...", level="info")
@@ -402,36 +484,15 @@ def extract_file(name:str) -> bool:
     tgt.mkdir(exist_ok=True, parents=True)
     
     try:
-        if src.suffix == '.zip':
-            # Use unzip command
-            result = subprocess.run(
-                ['unzip', '-q', '-o', str(src), '-d', str(tgt)],
-                capture_output=True,
-                text=True,
-                timeout=300  # 5 minute timeout
-            )
-        elif src.suffix == '.rar':
-            # Use unrar command (supports RAR5 format)
-            result = subprocess.run(
-                ['unrar', 'x', '-y', '-o+', str(src), str(tgt) + '/'],
-                capture_output=True,
-                text=True,
-                timeout=300  # 5 minute timeout
-            )
-        elif src.suffix == '.7z':
-            # Use 7z command from p7zip-full
-            result = subprocess.run(
-                ['7z', 'x', str(src), f'-o{str(tgt)}', '-y'],
-                capture_output=True,
-                text=True,
-                timeout=300  # 5 minute timeout
-            )
-        else:
-            log(f"Unsupported file type: {src.suffix}", level="error")
-            
-            return False
+        # Use 7z for all archive types (.zip, .rar, .7z)
+        result = subprocess.run(
+            ['7z', 'x', str(src), f'-o{str(tgt)}', '-y'],
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
         
-        # Check if extraction was successful (0 or 1 for unzip warnings)
+        # Check if extraction was successful
         if result.returncode not in [0, 1]:
             log(f"Error extracting {src.name} (exit code: {result.returncode})", level="error")
             
@@ -450,8 +511,8 @@ def extract_file(name:str) -> bool:
         
         return False
     except FileNotFoundError as e:
-        log(f"Error: Required extraction tool not found.", level="error")
-        log("Install with: sudo apt install unzip unrar p7zip-full", level="error")
+        log(f"Error: 7z command not found.", level="error")
+        log("Install with: sudo apt install p7zip-full", level="error")
         return False
     except Exception as e:
         log(f"Error extracting {src.name}: {e}", level="error")

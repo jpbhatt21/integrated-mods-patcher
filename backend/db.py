@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 from sessions import get_session
+from urllib.parse import quote
+
 session = get_session()
 load_dotenv()
 NOCO_DB_API_URL = os.getenv('NOCO_DB_API_URL', '')
@@ -12,18 +14,37 @@ HEADERS = {
     'Authorization': "Bearer {}"
 }
 
-def get(ep, bearer=None, table="",record=""):
+def get(ep, bearer=None, table="",record="",query_params=None):
     """Generic GET request to NocoDB API"""
     headers = HEADERS.copy()
     if bearer:
         headers['Authorization'] = headers['Authorization'].format(bearer)
     endpoint = NOCO_DB_ENDPOINTS.get(ep,False)
-    url = NOCO_DB_API_URL.format(endpoint.format(NOCO_DB_BASE, NOCO_DB_TABLES[table], record)) if endpoint else ep
-    print(url)
+    # URL-encode the record parameter
+    encoded_record = quote(str(record), safe='') if record else record
+    url = NOCO_DB_API_URL.format(endpoint.format(NOCO_DB_BASE, NOCO_DB_TABLES[table], encoded_record)) if endpoint else ep
     return session.get(
         url,
         headers=headers,
+        params=query_params
     )
+
+def patch(ep, bearer=None, table="",record="", data=None):
+    """Generic PATCH request to NocoDB API"""
+    headers = HEADERS.copy()
+    if bearer:
+        headers['Authorization'] = headers['Authorization'].format(bearer)
+    endpoint = NOCO_DB_ENDPOINTS.get(ep,False)
+    # URL-encode the record parameter
+    encoded_record = quote(str(record), safe='') if record else record
+    url = NOCO_DB_API_URL.format(endpoint.format(NOCO_DB_BASE, NOCO_DB_TABLES[table], encoded_record)) if endpoint else ep
+    return session.patch(
+        url,
+        headers=headers,
+        json=data
+    )
+
+
 
 def post(endpoint, bearer=None, table="", data=None):
     """Generic POST request to NocoDB API"""

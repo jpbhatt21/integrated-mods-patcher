@@ -36,13 +36,38 @@ export function Dashboard({ onLogout }: DashboardProps) {
 	});
 
 	// Control states
-	const [game, setGame] = useState<string>("WW");
-	const [threads, setThreads] = useState<number>(8);
-	const [sleep, setSleep] = useState<number>(1);
-	const [delay, setDelay] = useState<number>(1);
-	const [mode, setMode] = useState<string>("scrape");
+	const [game, setGame] = useState<string>(() => localStorage.getItem("game") || "WW");
+	const [threads, setThreads] = useState<number>(() => parseInt(localStorage.getItem("threads") || "8"));
+	const [sleep, setSleep] = useState<number>(() => parseFloat(localStorage.getItem("sleep") || "1"));
+	const [delay, setDelay] = useState<number>(() => parseFloat(localStorage.getItem("delay") || "1"));
+	const [mode, setMode] = useState<string>(() => localStorage.getItem("mode") || "scrape");
 	const [isRunning, setIsRunning] = useState<boolean>(false);
-	const [liveStats, setLiveStats] = useState<boolean>(true);
+	const [liveStats, setLiveStats] = useState<boolean>(() => localStorage.getItem("liveStats") === "false" ? false : true);
+
+	// Persist state changes to localStorage
+	useEffect(() => {
+		localStorage.setItem("game", game);
+	}, [game]);
+
+	useEffect(() => {
+		localStorage.setItem("threads", threads.toString());
+	}, [threads]);
+
+	useEffect(() => {
+		localStorage.setItem("sleep", sleep.toString());
+	}, [sleep]);
+
+	useEffect(() => {
+		localStorage.setItem("delay", delay.toString());
+	}, [delay]);
+
+	useEffect(() => {
+		localStorage.setItem("mode", mode);
+	}, [mode]);
+
+	useEffect(() => {
+		localStorage.setItem("liveStats", liveStats.toString());
+	}, [liveStats]);
 
 	useEffect(() => {
 		// Fetch initial data or perform setup here

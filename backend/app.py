@@ -69,6 +69,7 @@ def auth():
         return jsonify({'success': True})
     else:
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
 @app.route('/api/stop', methods=['GET'])
 def stop():
     """Stop the current running task"""
@@ -80,6 +81,7 @@ def stop():
         return jsonify({'success': True})
     else:
         return jsonify({'success': False, 'error': 'No running task to cancel'}), 400
+
 @app.route('/api/start/<task>/<game>/<threads>/<sleep>', methods=['GET'])
 def table(task, game, threads, sleep):
     bearer = request.headers.get('Authorization')
