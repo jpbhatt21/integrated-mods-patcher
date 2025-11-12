@@ -221,10 +221,10 @@ def fix():
         mod_patch[mod_id][str(id)] = data
     patch_data=[]
     for mod_id, files_data in mod_patch.items():
-        get_mod_from_db = db.get('RECORDS', bearer=BEARER, table=GAME, record=str(mod_id))
+        get_mod_from_db = TABLE_DATA.get(str(mod_id))
         if not get_mod_from_db.status_code==200:
             continue
-        mod_data = json.loads(get_mod_from_db.json().get('fields',{}).get('Data',"{}"))
+        mod_data = json.loads(get_mod_from_db.get('Data',"{}"))
         log(mod_data,level="info")
         # mod_data.update(files_data)
         log(mod_data,level="info")
@@ -239,6 +239,7 @@ def fix():
     log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
     if(patch_data):
         log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
+        return
         res=db.patch('RECORDS', bearer=BEARER, table=GAME, data=patch_data)
         log(f"Patch response: {res.status_code} - {res.text}", level="info")
     return True
@@ -330,11 +331,11 @@ def start_service(task="run",game="WW", bearer="",threads=4,sleep=2):
     DOWNLOAD_DIR.mkdir(exist_ok=True, parents=True)
     EXTRACT_DIR.mkdir(exist_ok=True, parents=True)
     log(f"Starting task: {TASK} for {GAME} with a maximum of {MAX_THREADS} threads and sleep time {SLEEP_TIME}s", level="info")
+    get_cats()
+    get_full_table_data()
     if TASK == "Fixing":
         threading.Thread(target=fix).start()
         return True
-    get_cats()
-    get_full_table_data()
     if TASK == "Running":
         threading.Thread(target=run).start()    
     elif TASK == "Updating":
@@ -614,6 +615,7 @@ def process_file(file: File, mod_id="") -> Optional[File]:
     if file["size"] > 1024*1024*1024:  # Skip files larger than 100MB
         file['data']['reason']="err: too large"
         return file
+    # return file
     try:
        
         if TASK == "Stopping" or not download_file(API_DL_URL.format(file['id']), name) or not extract_file(name):
