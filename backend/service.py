@@ -222,7 +222,7 @@ def fix():
     patch_data=[]
     for mod_id, files_data in mod_patch.items():
         get_mod_from_db = TABLE_DATA.get(str(mod_id))
-        if not get_mod_from_db.status_code==200:
+        if not get_mod_from_db:
             continue
         mod_data = json.loads(get_mod_from_db.get('Data',"{}"))
         log(mod_data,level="info")
