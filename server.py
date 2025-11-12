@@ -121,7 +121,7 @@ def run_init():
     print("\n[1/1] Running npm install in frontend folder...")
     try:
         subprocess.run(
-            ["npm", "install"],
+            "npm install",
             cwd=frontend_dir,
             shell=True,
             check=True
@@ -145,7 +145,7 @@ def run_dev():
         print("\n[Frontend] Starting npm run dev...")
         try:
             subprocess.run(
-                ["npm", "run", "dev"],
+                "npm run dev",
                 cwd=frontend_dir,
                 shell=True,
                 check=True
@@ -159,7 +159,7 @@ def run_dev():
         print("\n[Backend] Starting python app.py...")
         try:
             subprocess.run(
-                ["python", "app.py"],
+                "python app.py",
                 cwd=backend_dir,
                 shell=True,
                 check=True

@@ -1,0 +1,32 @@
+version: "3.8"
+services:
+  web:
+    image: "python:3.13-slim"
+    container_name: mods-patcher-web
+    ports:
+      - "5000:5000"
+    volumes:
+      - ".:/app"
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FLASK_ENV=production
+      - DEBIAN_FRONTEND=noninteractive
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - USERS=${USERS}
+      - NOCO_DB_API_URL=${NOCO_DB_API_URL}
+      - NOCO_DB_ENDPOINTS=${NOCO_DB_ENDPOINTS}
+      - NOCO_DB_BASE=${NOCO_DB_BASE}
+      - NOCO_DB_TABLES=${NOCO_DB_TABLES}
+    command: "bash -c \" echo '=== Installing system dependencies ===' && sed -i '/^Components:/s/$$/ contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources && apt-get update && apt-get install -y --no-install-recommends curl git build-essential libssl-dev p7zip-full p7zip-rar unrar-free unzip &&echo '=== Cloning Repo ===' && rm -rf '/app'/{*,.[!.]*} && cd /app && git clone https://github.com/jpbhatt21/integrated-mods-patcher.git . && ls /app && \necho '=== Installing Node.js ===' && curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs &&\necho '=== Installing Python dependencies ===' && pip3 install --no-cache-dir -r /app/requirements.txt &&\necho '=== Building frontend ===' && cd /app/frontend && npm install && npm run build &&\necho '=== Copying frontend build to backend ===' && mkdir -p /app/backend/dist && cp -r dist/* /app/backend/dist/ &&\necho '=== Starting backend server ===' && cd /app && python3 backend/app.py \"\n"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - "-f"
+        - "http://localhost:5000/api/health"
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 2m

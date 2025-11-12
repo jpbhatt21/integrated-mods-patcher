@@ -1,5 +1,14 @@
 # Builder: build frontend assets
 FROM node:24-slim AS builder
+# WORKDIR /app
+
+# # Clone the repository (or copy if building from local)
+# # If building from local, comment out the git clone and use COPY instead
+# RUN git clone https://github.com/jpbhatt21/integrated-mods-patcher.git .
+
+# # Copy application files
+# COPY . .
+
 WORKDIR /app/frontend
 
 # copy package files first for cached installs
