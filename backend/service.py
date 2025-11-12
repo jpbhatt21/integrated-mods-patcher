@@ -235,7 +235,6 @@ def fix():
                 "Data": mod_data
             }
         })
-        break
     # log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
     if(patch_data):
         log(f"Prepared patch data for {len(patch_data)} mods.", level="info")
