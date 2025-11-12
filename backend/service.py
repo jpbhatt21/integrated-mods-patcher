@@ -243,7 +243,7 @@ def fix():
         for i in range(0, len(patch_data), batch_size):
             batch = patch_data[i:i+batch_size]
             log(f"Patching batch {i//batch_size + 1} with {len(batch)} records...", level="info")
-            res = db.patch('RECORDS', bearer=BEARER, table=GAME, data={"records": batch})
+            res = db.patch('RECORDS', bearer=BEARER, table=GAME, data=batch)
             log(f"Patch response: {res.status_code} - {res.text}", level="info")
             if res.status_code == 200:
                 log(f"Successfully patched batch {i//batch_size + 1}", level="info")
