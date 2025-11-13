@@ -21,8 +21,10 @@ def get(ep, bearer=None, table="",record="",query_params=None):
         headers['Authorization'] = headers['Authorization'].format(bearer)
     endpoint = NOCO_DB_ENDPOINTS.get(ep,False)
     # URL-encode the record parameter
+
     encoded_record = quote(str(record), safe='') if record else record
     url = NOCO_DB_API_URL.format(endpoint.format(NOCO_DB_BASE, NOCO_DB_TABLES[table], encoded_record)) if endpoint else ep
+    print(f"GET URL: {url} with params: {query_params}")
     return session.get(
         url,
         headers=headers,
