@@ -188,8 +188,7 @@ def get_broken_files(mod):
 def fix():
     global PROGRESS
     broken_mods = get_recr(query_params={'where': '(Data, like, err: dl/ex failed)'})
-    PROGRESS["mods_total"] = len(broken_mods)
-    PROGRESS["mods_done"] = 0
+    
     broken_files=[]
     mod_to_files={}
     file_to_mod={}
@@ -197,6 +196,7 @@ def fix():
     #     if(mod["Id"]=="Mod/616624"):
     #         broken_mods=[mod]
     #         break
+    print(f"Total broken mods to fix: {len(broken_mods)}")
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         # Submit all file processing tasks
         future_to_mod = {executor.submit(get_broken_files, mod): mod for mod in broken_mods} 
@@ -215,12 +215,15 @@ def fix():
                 broken_files.extend(files)
             except Exception as e:
                 log(f"Exception occurred while processing mod {original_mod['Id']}: {e}", level="error")
-    
+    PROGRESS["mods_total"] = len(mod_to_files.keys())
+    PROGRESS["mods_done"] = 0
     print(f"Total broken files to fix: {len(broken_files)}, first file: {broken_files[0] if broken_files else 'N/A'}")
     fixed_files={}
     for i in range(0,len(broken_files),MAX_THREADS):
         target = broken_files[i:i+MAX_THREADS]
         fixed = batch_process_files(target)
+        print(f"Target files batch {i//MAX_THREADS + 1}: {[file['id'] for file in target]}")
+        print(f"Fixed files batch {i//MAX_THREADS + 1}: {fixed}")
         
         for j in target:
             if j['id'] in fixed:
@@ -237,18 +240,18 @@ def fix():
                 if not mod_data.status_code==200:
                     log(f"Failed to fetch mod {j['parent_id']} from DB for patching",level="error")
                     continue
-                print(f"Mod data fetched: {mod_data.json()}")
+                # print(f"Mod data fetched: {mod_data.json()}")
                 mod_json = json.loads(mod_data.json().get('fields',{}).get('Data',"{}"))
-                print(f"Mod JSON data: {mod_json}")
+                # print(f"Mod JSON data: {mod_json}")
                 mod_json.update(fixed_files[j['parent_id']])
-                print(f"Updated Mod JSON data: {mod_json}")
+                # print(f"Updated Mod JSON data: {mod_json}")
                 patch_res = db.patch('RECORDS', bearer=BEARER, table=GAME, data=[{
                     "id": j['parent_id'],
                     "fields":{
                         "Data": mod_json
                     }
                 }])
-                print(f"Patch response for mod {j['parent_id']}: {patch_res.status_code} - {patch_res.text}")
+                print(f"Patch response for mod {j['parent_id']}: {patch_res.status_code}")
                 if patch_res.status_code == 200:
                     log(f"Successfully patched mod {j['parent_id']}", level="info")
                 del fixed_files[j['parent_id']]
