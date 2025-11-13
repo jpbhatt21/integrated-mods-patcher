@@ -107,9 +107,9 @@ export function Dashboard({ onLogout }: DashboardProps) {
 	const handleStop = () => {
 		setIsRunning(false);
 		apiClient.stop().then((data) => {
-			if (data.success && data.status) {
+			if ( data.status) {
 				setState(data.status);
-			} else if (!data.success) {
+			} else {
 				setIsRunning(true);
 			}
 		});

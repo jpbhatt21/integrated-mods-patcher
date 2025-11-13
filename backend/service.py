@@ -221,10 +221,13 @@ def fix():
     fixed_files={}
     for i in range(0,len(broken_files),MAX_THREADS):
         target = broken_files[i:i+MAX_THREADS]
+        if TASK=="Stopping":
+            break
         fixed = batch_process_files(target)
         print(f"Target files batch {i//MAX_THREADS + 1}: {[file['id'] for file in target]}")
         print(f"Fixed files batch {i//MAX_THREADS + 1}: {fixed}")
-        
+        if TASK=="Stopping":
+            break
         for j in target:
             if j['id'] in fixed:
                 # print(f"File {j['id']} fixed data: {fixed[j['id']]}")
@@ -297,7 +300,11 @@ def fix():
     #             log(f"Failed to patch batch {i//batch_size + 1}", level="error")
     #         time.sleep(SLEEP_TIME)  # Sleep between batches
     global TASK
-    TASK="Finished"
+    if TASK=="Stopping":
+        TASK="Cancelled"
+        log("Task cancelled by user.", level="info")
+    else:    
+        TASK="Finished"
     return True
 
 
@@ -387,11 +394,11 @@ def start_service(task="run",game="WW", bearer="",threads=4,sleep=2):
     DOWNLOAD_DIR.mkdir(exist_ok=True, parents=True)
     EXTRACT_DIR.mkdir(exist_ok=True, parents=True)
     log(f"Starting task: {TASK} for {GAME} with a maximum of {MAX_THREADS} threads and sleep time {SLEEP_TIME}s", level="info")
-    get_cats()
-    get_full_table_data()
     if TASK == "Fixing":
         threading.Thread(target=fix).start()
         return True
+    get_cats()
+    get_full_table_data()
     if TASK == "Running":
         threading.Thread(target=run).start()    
     elif TASK == "Updating":
