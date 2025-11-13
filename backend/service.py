@@ -186,7 +186,7 @@ def get_broken_files(mod):
     return res
 
 def fix():
-    global PROGRESS
+    global PROGRESS, TASK
     broken_mods = get_recr(query_params={'where': '(Data, like, err: dl/ex failed)'})
     
     broken_files=[]
@@ -299,7 +299,7 @@ def fix():
     #         else:
     #             log(f"Failed to patch batch {i//batch_size + 1}", level="error")
     #         time.sleep(SLEEP_TIME)  # Sleep between batches
-    global TASK
+  
     if TASK=="Stopping":
         TASK="Cancelled"
         log("Task cancelled by user.", level="info")
