@@ -258,7 +258,9 @@ def fix():
                 if patch_res.status_code == 200:
                     log(f"Successfully patched mod {j['parent_id']}", level="info")
                 del fixed_files[j['parent_id']]
-
+        if SLEEP_TIME>0:
+            log(f"Sleeping for {SLEEP_TIME} seconds before next batch...", level="info")
+            time.sleep(SLEEP_TIME)
         # fixed_files.update(fixed)
     # mod_patch={}
     # for id,data in fixed_files.items():
@@ -373,7 +375,11 @@ def run():
             time.sleep(SLEEP_TIME)
     log("Scraping completed successfully!", level="finish")
     
-    TASK="Finished"
+    if TASK=="Stopping":
+        TASK="Cancelled"
+        log("Task cancelled by user.", level="info")
+    else:    
+        TASK="Finished"
     pass
 
 def start_service(task="run",game="WW", bearer="",threads=4,sleep=2):

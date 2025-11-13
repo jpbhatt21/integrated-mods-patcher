@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
-import { LogOut, RefreshCwIcon,  Activity, Play, Square, TimerResetIcon, FileCogIcon, Settings2Icon, GamepadIcon, SplitIcon, PauseIcon, PickaxeIcon, ActivityIcon, ScrollTextIcon } from "lucide-react";
+import { LogOut, RefreshCwIcon, Activity, Play, Square, TimerResetIcon, FileCogIcon, Settings2Icon, GamepadIcon, SplitIcon, PauseIcon, PickaxeIcon, ActivityIcon, ScrollTextIcon } from "lucide-react";
 
 import type { DashboardProps } from "@/utils/types";
 import { useEffect, useState } from "react";
@@ -42,7 +42,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
 	const [delay, setDelay] = useState<number>(() => parseFloat(localStorage.getItem("delay") || "1"));
 	const [mode, setMode] = useState<string>(() => localStorage.getItem("mode") || "scrape");
 	const [isRunning, setIsRunning] = useState<boolean>(false);
-	const [liveStats, setLiveStats] = useState<boolean>(() => localStorage.getItem("liveStats") === "false" ? false : true);
+	const [liveStats, setLiveStats] = useState<boolean>(() => (localStorage.getItem("liveStats") === "false" ? false : true));
 
 	// Persist state changes to localStorage
 	useEffect(() => {
@@ -81,7 +81,14 @@ export function Dashboard({ onLogout }: DashboardProps) {
 
 		const interval = setInterval(() => {
 			apiClient.status().then((data) => {
-				if (data.success) setState(data.status);
+				if (data.success) {
+					setState(data.status);
+					if (data.status.current_task === "Finished" || data.status.current_task === "Cancelled" || data.status.current_task === "Idle") {
+						setIsRunning(false);
+					} else {
+						setIsRunning(true);
+					}
+				}
 			});
 		}, delay * 1000);
 
@@ -106,13 +113,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
 
 	const handleStop = () => {
 		setIsRunning(false);
-		apiClient.stop().then((data) => {
-			if ( data.status) {
-				setState(data.status);
-			} else {
-				setIsRunning(true);
-			}
-		});
+		apiClient.stop();
 	};
 
 	return (
