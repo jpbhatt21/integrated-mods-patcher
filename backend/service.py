@@ -186,8 +186,12 @@ def get_broken_files(mod):
     return res
 
 def fix():
+    global PROGRESS
     broken_mods = get_recr(query_params={'where': '(Data, like, err: dl/ex failed)'})
+    PROGRESS["mods_total"] = len(broken_mods)
+    PROGRESS["mods_done"] = 0
     broken_files=[]
+    mod_to_files={}
     file_to_mod={}
     # for mod in broken_mods:
     #     if(mod["Id"]=="Mod/616624"):
@@ -203,6 +207,9 @@ def fix():
                 files = future.result()
                 if files is None:
                     files = original_mod 
+                mod_to_files[original_mod['Id']]={
+                    file['id']:True for file in files
+                }
                 for file in files:
                     file_to_mod[file['id']]=file['parent_id']
                 broken_files.extend(files)
@@ -210,46 +217,84 @@ def fix():
                 log(f"Exception occurred while processing mod {original_mod['Id']}: {e}", level="error")
     
     print(f"Total broken files to fix: {len(broken_files)}, first file: {broken_files[0] if broken_files else 'N/A'}")
-    fixed_files = batch_process_files(broken_files)
-    mod_patch={}
-    for id,data in fixed_files.items():
-        mod_id = file_to_mod.get(id)
-        if not mod_id:
-            continue
-        if mod_id not in mod_patch:
-            mod_patch[mod_id]={}
-        mod_patch[mod_id][str(id)] = data
-    patch_data=[]
-    for mod_id, files_data in mod_patch.items():
-        get_mod_from_db = TABLE_DATA.get(str(mod_id))
-        if not get_mod_from_db:
-            continue
-        mod_data = json.loads(get_mod_from_db.get('Data',"{}"))
-        # log(mod_data,level="info")
-        mod_data.update(files_data)
-        # log(mod_data,level="info")
-        log(f"Fetched mod {mod_id} from DB for patching",level="info")
-        patch_data.append({
-            "id": mod_id,
-            "fields":{
-                "Data": mod_data
-            }
-        })
-    # log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
-    if(patch_data):
-        log(f"Prepared patch data for {len(patch_data)} mods.", level="info")
-        # Batch patch data into groups of 10
-        batch_size = 10
-        for i in range(0, len(patch_data), batch_size):
-            batch = patch_data[i:i+batch_size]
-            log(f"Patching batch {i//batch_size + 1} with {len(batch)} records...", level="info")
-            res = db.patch('RECORDS', bearer=BEARER, table=GAME, data=batch)
-            log(f"Patch response: {res.status_code} - {res.text}", level="info")
-            if res.status_code == 200:
-                log(f"Successfully patched batch {i//batch_size + 1}", level="info")
-            else:
-                log(f"Failed to patch batch {i//batch_size + 1}", level="error")
-            time.sleep(SLEEP_TIME)  # Sleep between batches
+    fixed_files={}
+    for i in range(0,len(broken_files),MAX_THREADS):
+        target = broken_files[i:i+MAX_THREADS]
+        fixed = batch_process_files(target)
+        
+        for j in target:
+            if j['id'] in fixed:
+                # print(f"File {j['id']} fixed data: {fixed[j['id']]}")
+                if j['parent_id'] not in fixed_files:
+                    fixed_files[j['parent_id']]={}
+                fixed_files[j['parent_id']][j['id']] = fixed[j['id']]
+            del mod_to_files[j['parent_id']][j['id']]
+            # print(mod_to_files)
+            if(mod_to_files[j['parent_id']]=={}):
+                PROGRESS["mods_done"]+=1
+                log(f"All files fixed for mod {j['parent_id']}", level="info")
+                mod_data = db.get('RECORDS', bearer=BEARER, table=GAME, record=j['parent_id'])
+                if not mod_data.status_code==200:
+                    log(f"Failed to fetch mod {j['parent_id']} from DB for patching",level="error")
+                    continue
+                print(f"Mod data fetched: {mod_data.json()}")
+                mod_json = json.loads(mod_data.json().get('fields',{}).get('Data',"{}"))
+                print(f"Mod JSON data: {mod_json}")
+                mod_json.update(fixed_files[j['parent_id']])
+                print(f"Updated Mod JSON data: {mod_json}")
+                patch_res = db.patch('RECORDS', bearer=BEARER, table=GAME, data=[{
+                    "id": j['parent_id'],
+                    "fields":{
+                        "Data": mod_json
+                    }
+                }])
+                print(f"Patch response for mod {j['parent_id']}: {patch_res.status_code} - {patch_res.text}")
+                if patch_res.status_code == 200:
+                    log(f"Successfully patched mod {j['parent_id']}", level="info")
+                del fixed_files[j['parent_id']]
+
+        # fixed_files.update(fixed)
+    # mod_patch={}
+    # for id,data in fixed_files.items():
+    #     mod_id = file_to_mod.get(id)
+    #     if not mod_id:
+    #         continue
+    #     if mod_id not in mod_patch:
+    #         mod_patch[mod_id]={}
+    #     mod_patch[mod_id][str(id)] = data
+    # patch_data=[]
+    # for mod_id, files_data in mod_patch.items():
+    #     get_mod_from_db = TABLE_DATA.get(str(mod_id))
+    #     if not get_mod_from_db:
+    #         continue
+    #     mod_data = json.loads(get_mod_from_db.get('Data',"{}"))
+    #     # log(mod_data,level="info")
+    #     mod_data.update(files_data)
+    #     # log(mod_data,level="info")
+    #     log(f"Fetched mod {mod_id} from DB for patching",level="info")
+    #     patch_data.append({
+    #         "id": mod_id,
+    #         "fields":{
+    #             "Data": mod_data
+    #         }
+    #     })
+    # # log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
+    # if(patch_data):
+    #     log(f"Prepared patch data for {len(patch_data)} mods.", level="info")
+    #     # Batch patch data into groups of 10
+    #     batch_size = 10
+    #     for i in range(0, len(patch_data), batch_size):
+    #         batch = patch_data[i:i+batch_size]
+    #         log(f"Patching batch {i//batch_size + 1} with {len(batch)} records...", level="info")
+    #         res = db.patch('RECORDS', bearer=BEARER, table=GAME, data=batch)
+    #         log(f"Patch response: {res.status_code} - {res.text}", level="info")
+    #         if res.status_code == 200:
+    #             log(f"Successfully patched batch {i//batch_size + 1}", level="info")
+    #         else:
+    #             log(f"Failed to patch batch {i//batch_size + 1}", level="error")
+    #         time.sleep(SLEEP_TIME)  # Sleep between batches
+    global TASK
+    TASK="Finished"
     return True
 
 
