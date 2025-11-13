@@ -3,13 +3,14 @@ import requests
 import os
 import shutil
 from pathlib import Path
+from datetime import datetime
 import time
 from typing import TypedDict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import db
 from sessions import get_session
-
+from ini_parser import parse_ini_by_hash, print_parsed_ini
 session = get_session()
 
 logs=[]
@@ -84,8 +85,11 @@ class File(TypedDict):
     added: int  # Unix timestamp (_tsDateAdded)
     data: Optional[dict]  # Placeholder for additional data
 
+VERSIONS=[1.1,1.2,1.3,1.4,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.7]
+VERSION_TIME=[1719532800, 1723680000, 1727568000, 1731542400, 1735776000, 1739404800, 1743033600, 1745884800, 1749686400, 1753315200, 1756339200,1759968000]
 REQUEST_TIMEOUT = 30
-BEARER=""
+bearer ="9YD7jd8LjCg-CdDPwKu3gCogalyI1tV5vdTkkFH1"
+BEARER=bearer or ""
 TASK = "Idle"
 DOWNLOAD_DIR = Path("download_temp")
 EXTRACT_DIR = Path("extract_temp")
@@ -142,12 +146,12 @@ import re # Import regular expressions
 
 
 
-def get_recr(query_params=None):
+def get_recr(query_params=None,table=GAME):
     data = []
     count=0
-    response = db.get('RECORDS', bearer=BEARER, table=GAME, query_params=query_params)
-    while True:
-        log(f"Fetching page {count} of NocoDB table {GAME}", level="info")
+    response = db.get('RECORDS', bearer=BEARER, table=table, query_params=query_params)
+    while TASK!="Stopping":
+        log(f"Fetching page {count} of NocoDB table {table}", level="info")
         try:
             response.raise_for_status()
             result = response.json()
@@ -221,6 +225,8 @@ def fix():
     fixed_files={}
     for i in range(0,len(broken_files),MAX_THREADS):
         target = broken_files[i:i+MAX_THREADS]
+        PROGRESS["categories_total"] = len(target)
+        PROGRESS["categories_done"] = 0
         if TASK=="Stopping":
             break
         fixed = batch_process_files(target)
@@ -309,7 +315,30 @@ def fix():
         TASK="Finished"
     return True
 
+def map():
+    global PROGRESS, TASK
+    if(not GAME == "WW"):
+        log("Mapping is only supported for WW game.", level="error")
+        TASK="Cancelled"
+        return
+    PROGRESS["categories_total"]=0
+    PROGRESS["categories_done"]=0
+    for mod in TABLE_DATA.values():
+        if TASK=="Stopping":
+            break
+        log(f"Mapping mod {mod['id']}", level="info")
+        res=analyze_mod(mod)
+        PROGRESS["mods_done"]+=1
+        PROGRESS["categories_total"] += 1
+        if res:
+            PROGRESS["categories_done"] += 1
 
+
+    if TASK=="Stopping":
+        TASK="Cancelled"
+        log("Task cancelled by user.", level="info")
+    else:    
+        TASK="Finished"
 
 def run():
     global PROGRESS,TASK
@@ -321,15 +350,10 @@ def run():
         print(f" - {category['name']} (ID: {category['id']}, Count: {category['count']})")
     print("-" * 40)
     log(f"Starting scraping for game {GAME}...", level="info")
-    PROGRESS={
-    "total_files_processed": 0,
-    "categories_total": PROGRESS["categories_total"],
-    "categories_done": 0,
-    "mods_total": PROGRESS["mods_total"],
-    "mods_done": 0,
-    "category": {"name":"","total":0,"done":0},
-    "mods": {},
-    "files": {},}
+    if( TASK=="Stopping"):
+        TASK="Cancelled"
+        log("Task cancelled by user.", level="info")
+        return
     for category in CATEGORIES:
         PROGRESS["category"]["total"]=category["count"]
         PROGRESS["category"]["name"]=category["name"]
@@ -383,7 +407,7 @@ def run():
     pass
 
 def start_service(task="run",game="WW", bearer="",threads=4,sleep=2):
-    global TASK, GAME, BEARER, MAX_THREADS, SLEEP_TIME
+    global TASK, GAME, BEARER, MAX_THREADS, SLEEP_TIME,PROGRESS
 
     if TASK not in ["Idle","Finished","Cancelled"]:
         log("A task is already running. Cannot start a new task.", level="warn")
@@ -393,10 +417,17 @@ def start_service(task="run",game="WW", bearer="",threads=4,sleep=2):
     SLEEP_TIME = sleep
     GAME = game
     BEARER = bearer
+    PROGRESS={
+    "total_files_processed": 0,
+    "categories_total":0,
+    "categories_done": 0,
+    "mods_total": 0,
+    "mods_done": 0,
+    "category": {"name":"","total":0,"done":0},
+    "mods": {},
+    "files": {},}
     threading.Thread(target=save_logs).start()
-    if TASK == "Mapping":
-        time.sleep(4)  # Simulate a medium-length task
-        return True
+    
     DOWNLOAD_DIR.mkdir(exist_ok=True, parents=True)
     EXTRACT_DIR.mkdir(exist_ok=True, parents=True)
     log(f"Starting task: {TASK} for {GAME} with a maximum of {MAX_THREADS} threads and sleep time {SLEEP_TIME}s", level="info")
@@ -409,6 +440,11 @@ def start_service(task="run",game="WW", bearer="",threads=4,sleep=2):
         threading.Thread(target=run).start()    
     elif TASK == "Updating":
         threading.Thread(target=update).start()
+    if TASK == "Mapping":
+        threading.Thread(target=map).start()
+    elif TASK == "Stopping":
+        TASK="Cancelled"
+        log("Task cancelled by user.", level="info")
 
     return True
 
@@ -443,12 +479,16 @@ def get_cats(passive=False) -> None:
 
 def get_full_table_data():
     global TABLE_DATA
-    data={}
     records = get_recr()
-    for record in records:
-         data[record['Id']] = record
-    TABLE_DATA = data
-    return data
+    # for record in records:
+    #      data[record['Id']] = record
+   
+    TABLE_DATA = {
+        record["Id"]: {
+            key.lower(): value for key, value in record.items()
+        } for record in records
+    }
+    return TABLE_DATA
     
 def get_mods(category: Category) -> list[Mod]:
     """Fetches mod URLs from a GameBanana category API endpoint."""
@@ -684,7 +724,7 @@ def process_file(file: File, mod_id="") -> Optional[File]:
     if file["size"] > 1024*1024*1024:  # Skip files larger than 100MB
         file['data']['reason']="err: too large"
         return file
-    # return file
+    return file
     try:
        
         if TASK == "Stopping" or not download_file(API_DL_URL.format(file['id']), name) or not extract_file(name):
@@ -714,6 +754,7 @@ def process_file(file: File, mod_id="") -> Optional[File]:
 
 def batch_process_files(files: list[File], mod_id="") -> dict:
     """Process files concurrently using a thread pool."""
+    global PROGRESS, TASK
     processed_files = {}
     # Use ThreadPoolExecutor for concurrent processing
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
@@ -732,7 +773,8 @@ def batch_process_files(files: list[File], mod_id="") -> dict:
                     log(f"Processed file {file['id']} successfully with {file['data']['ini_count']} INI files.", level="info")
                 else:
                     log(f"Failed to process file {file['id']}: {file['data']['reason']}", level="warn")
-                
+                if(TASK == "Fixing"):
+                    PROGRESS["categories_done"] += 1
                 processed_files[file["id"]] = file["data"]
             except Exception as e:
                 log(f"Exception occurred while processing file {original_file['id']}: {e}", level="error")
@@ -743,4 +785,193 @@ def batch_process_files(files: list[File], mod_id="") -> dict:
                 }
     return processed_files
 
+def analyze_mod(mod:Mod):#534215
+    global VERSIONS,VERSION_TIME, PROGRESS, TASK
+    # BEARER="9YD7jd8LjCg-CdDPwKu3gCogalyI1tV5vdTkkFH1"
+    # mod = Mod(
+    #     id=id,
+    #     added=0,
+    #     modified=0
+    # )
+    # response = db.get('RECORDS', bearer=BEARER, table=GAME, record=mod['id'])
+    # mod_json = response.json()
+    # mod={
+    #     "id": mod['id'],
+    #     # **data['record']['fields'] but make the keys start with lowercase
+    #     **{k[0].lower() + k[1:]: v for k, v in mod_json['fields'].items()}
+    # }
+    try:
+        mod["data"] = json.loads(mod["data"])
+    except Exception as e:
+        log(f"Error parsing mod data JSON for mod {mod['id']}: {e}", level="error")
+        return False
+    if not mod["data"]:
+        print("No data to analyze.")
+        return False
+    #convert data["data"] from dict {id:data} to an array , filter by status=="success"
+    mod["data"] = [{**v, "id": k} for k, v in mod["data"].items() if v.get("status")=="success"]
+    
+    sorted_files = mod["data"].copy()
+    sorted_files.sort(key=lambda x: x.get("added",0))
+    
+    files_grouped_by_version={}
 
+    for file in mod["data"]:
+        file_added = file.get("added", 0)
+        file_version = file_added   
+        # for i in range(len(VERSION_TIME)):
+        #     if file_added >= VERSION_TIME[i]:
+        #         file_version = VERSIONS[i]
+        if file_version not in files_grouped_by_version:
+            files_grouped_by_version[file_version] = []
+        files_grouped_by_version[file_version].append(file)
+    
+    if(len(files_grouped_by_version)<2):
+        print("Not enough versions to map.")
+        return False
+
+    prefix = f"{GAME}/{mod['id']}/"
+    inis = {file["Id"].replace(prefix,""):{
+        "name": file["Name"],
+        "data": parse_ini_by_hash(file["Data"])
+    } for file in get_recr(query_params={'where': f"(Id, like, {prefix})"}, table="INI")}
+    
+    inis_grouped_by_version={}
+    for version in files_grouped_by_version:
+        inis_grouped_by_version[version] = []
+        for file in files_grouped_by_version[version]:
+            ini_count = file.get("ini_count", 0)
+            inis_data = []
+            for i in range(ini_count):
+                ini_id = f"{file['id']}/{i}"
+                if ini_id in inis:
+                    inis_data.append(inis[ini_id])
+            inis_grouped_by_version[version].append({
+                "file_id": file['id'],
+                "inis": inis_data
+            })
+        merged_data={}
+        for file in inis_grouped_by_version[version]:
+            for i,ini in enumerate(file["inis"]):
+                exists = list(filter(lambda x: x.startswith(f'{ini["name"]}'), merged_data.keys()))
+                key = f'{ini["name"]}'
+                if not i==0 and exists:   
+                    key += f'_{i}'
+                
+                if not exists or not key in merged_data:
+                    merged_data[key] = ini["data"]
+                elif not ini["data"] == merged_data[exists[0]]:
+                    merged_data[key].update(ini["data"])
+        inis_grouped_by_version[version] = merged_data
+    
+    inis_grouped_by_name={}
+    for version,files in inis_grouped_by_version.items():
+        for name,ini in files.items():
+            if name not in inis_grouped_by_name:
+                inis_grouped_by_name[name]={}
+            inis_grouped_by_name[name][str(version)]=ini
+    
+    hashes={}
+    for file, data in inis_grouped_by_name.items():
+        keys={}
+        for ver, ini in data.items():
+            for key,hash in ini.items():
+                if key not in keys:
+                    keys[key]={}
+                if hash not in keys[key]:
+                    keys[key][hash]=ver
+            
+        
+        for key,obj in keys.items():
+            if len(obj)<2:
+                continue
+            prev=""
+            for hash,ver in obj.items():
+                if(prev and not prev==hash):
+                    if not hash in hashes[prev]["next"]:
+                        hashes[prev]["next"][hash]={"count":0}
+                    hashes[prev]["next"][hash]["count"]+=1
+                    hashes[prev]["next"]["ver"]=max(hashes[prev]["next"].get("ver",999),float(ver))
+                prev=hash
+                if not hash in hashes:
+                    hashes[hash]={"next":{}}
+                # hashes[hash]["ver"]=min(hashes[hash].get("ver",0),float(ver))     
+
+        inis_grouped_by_name[file]=keys
+        pass 
+    PROGRESS["total_files_processed"]+=len(inis)
+    def upsert_hash(hash,next,prev=[]):
+        if not next:
+            print(f"Skipped hash {hash} as no next data.")      
+            return
+        data = {"Hash":hash,"Next":json.dumps(next)}
+        if(hash in prev or next.get(hash)):
+            data=json.loads(db.get('RECORDS', bearer=BEARER, table="WWH",record="-warning-loop").json().get('fields',{}).get('Next',"{}"))
+            data[datetime.now().isoformat()]="warning: loop detected in "+ "->".join(prev+[hash])
+            db.patch('RECORDS', bearer=BEARER, table="WWH",data=[{
+                "Hash":"-warning-loop",
+                "Next":json.dumps(data)
+            }] )
+            return
+        res=db.post("GENERIC", bearer=BEARER, table="WWH",data=data )
+        
+        if res.status_code==400:
+            res=db.get('RECORDS', bearer=BEARER, table="WWH",record=hash)
+            if res.status_code==200:
+                ver=next.get("ver",0)
+                del next["ver"]
+                old_next=json.loads(res.json().get('fields',{}).get('Next',"{}"))
+                old_ver = old_next.get("ver",0)
+                del old_next["ver"]
+                if(old_next==next):
+                    for k in next:
+                        if k in old_next:
+                            next[k]["count"]+=old_next[k].get("count",0)
+                    next["ver"]=min(old_ver,ver)
+                elif old_ver>ver:
+                    for h in next:
+                        upsert_hash(h,{**old_next,"ver":old_ver},prev+[hash])
+                elif ver>old_ver:
+                    for h in old_next:
+                        upsert_hash(h,{**next,"ver":ver},prev+[hash])
+                else:
+                    next={**old_next,**next,"ver":ver}
+                res=db.patch('RECORDS', bearer=BEARER, table="WWH",  data=[{"Hash":hash,"Next":json.dumps(next)}] )          
+        elif res.status_code==200:
+            print(f"Uploaded hash {hash} successfully.")
+        else:
+            print(f"Failed to upload hash {hash}. Status code: {res.status_code}. Message: {res.text}")  
+        
+    for hash, obj in hashes.items():
+        if TASK=="Stopping":
+            break
+        upsert_hash(hash,obj["next"])  
+
+    if TASK=="Stopping":
+        return False
+    with open("temp.json", "w", encoding="utf-8") as f:
+        json.dump(hashes, f, ensure_ascii=False, indent=4)
+    return True
+
+# analyze_mod()
+
+# hashes = get_recr(table="WWH")
+# count_multi=0
+# count_single=0
+# for hash in hashes:
+#     try:
+#         hash["Next"] = json.loads(hash.get("Next","{}"))
+#     except Exception as e:
+#         log(f"Error parsing hash Next JSON for hash {hash['Hash']}: {e}", level="error")
+#         hash["Next"] = {}
+#     if len(hash["Next"])>2:
+#         count_multi+=1
+#     if hash["Next"]:
+#         del hash["Next"]["ver"]
+#         for next in hash["Next"].values():
+#             if next["count"]==1:
+#                 count_single+=1 
+
+# print(f"Total hashes with multiple next entries: {count_multi}")
+# print(f"Total next entries with count 1: {count_single}")
+    

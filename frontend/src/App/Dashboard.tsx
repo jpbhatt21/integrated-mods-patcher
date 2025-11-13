@@ -1,5 +1,4 @@
 import { motion } from "motion/react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -112,7 +111,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
 	};
 
 	const handleStop = () => {
-		setIsRunning(false);
 		apiClient.stop();
 	};
 
@@ -187,7 +185,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
 										<CardHeader>
 											<CardTitle className="flex items-center gap-2">
 												<FileCogIcon className="w-5 h-5" />
-												Categories
+												{state.current_task === "Fixing" ? "File Batch" : state.current_task === "Mapping" ? "Mods Used" : "Categories"}
 											</CardTitle>
 										</CardHeader>
 										<CardContent>
@@ -199,6 +197,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
 												<div className="w-full bg-secondary rounded-full h-2.5">
 													<div className="bg-accent h-2.5 rounded-full transition-all duration-300" style={{ width: `${categoryProgress}%` }}></div>
 												</div>
+												<p className="text-xs text-muted-foreground">{state.current_task === "Fixing" ? `${categoryProgress.toFixed(1)}% complete` : "⠀"}</p>
 											</div>
 										</CardContent>
 									</Card>
@@ -218,7 +217,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
 												<div className="w-full bg-secondary rounded-full h-2.5">
 													<div className="bg-accent h-2.5 rounded-full transition-all duration-300" style={{ width: `${modsProgress}%` }}></div>
 												</div>
-												<p className="text-xs text-muted-foreground">{modsProgress.toFixed(1)}% complete</p>
+												<p className="text-xs text-muted-foreground">{isRunning ? `${modsProgress.toFixed(1)}% complete` : "⠀"}</p>
 											</div>
 										</CardContent>
 									</Card>
@@ -254,7 +253,25 @@ export function Dashboard({ onLogout }: DashboardProps) {
 											</Select>
 										</CardContent>
 									</Card>
-
+									<Card className="border-0  h-20 justify-center bg-input/10">
+										<CardContent className="flex gap-4">
+											<CardTitle className="flex items-center gap-2">
+												<PickaxeIcon className="w-5 h-5" />
+												Action
+											</CardTitle>
+											<Select value={mode} onValueChange={setMode}>
+												<SelectTrigger id="mode" disabled={isRunning} className="bg-button text-foreground/90 duration-200 transition-opacity">
+													<SelectValue placeholder="Select an action" />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="scrape">Scrape</SelectItem>
+													<SelectItem value="update">Update</SelectItem>
+													<SelectItem value="fix">Fix</SelectItem>
+													<SelectItem value="map">Map Hashes</SelectItem>
+												</SelectContent>
+											</Select>
+										</CardContent>
+									</Card>
 									<Card className="border-0  h-20 justify-center bg-input/10">
 										<CardContent className="flex gap-4">
 											<CardTitle className="flex items-center gap-2">
@@ -277,28 +294,6 @@ export function Dashboard({ onLogout }: DashboardProps) {
 										</CardContent>
 									</Card>
 
-									<Card className="border-0  h-20 justify-center bg-input/10">
-										<CardContent className="flex gap-4">
-											<CardTitle className="flex items-center gap-2">
-												<PickaxeIcon className="w-5 h-5" />
-												Action
-											</CardTitle>
-											<Tabs
-												value={mode}
-												onValueChange={setMode}
-												style={{
-													opacity: isRunning ? "0.5" : "",
-													pointerEvents: isRunning ? "none" : "auto",
-													transition: "all 0.2s",
-												}}>
-												<TabsList className="grid bg-transparent w-full grid-cols-3">
-													<TabsTrigger value="scrape">Scrape</TabsTrigger>
-													<TabsTrigger value="update">Update</TabsTrigger>
-													<TabsTrigger value="fix">Fix</TabsTrigger>
-												</TabsList>
-											</Tabs>
-										</CardContent>
-									</Card>
 									<Card className="border-0  h-20 justify-center bg-input/10">
 										<CardContent className="flex gap-4">
 											<CardTitle className="flex min-w-fit items-center gap-2">
