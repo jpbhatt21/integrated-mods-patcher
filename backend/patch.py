@@ -8,7 +8,7 @@ with open(file, 'r', encoding='utf-8') as f:
     data = f.read()
 ini_data = parse_ini_by_hash(data)
 print_parsed_ini(ini_data)
-bearer ="9YD7jd8LjCg-CdDPwKu3gCogalyI1tV5vdTkkFH1"
+bearer = "" #Your bearer token here
 
 updated_data={}
 
@@ -19,14 +19,27 @@ def patch_hash(hash,prev=[]):
     if res.status_code == 200:
         hash_record = res.json()
         fields = hash_record.get('fields', {})
-        next=json.loads(fields.get('Next', '{}'))
-        if len(next)==0:
-            return hash
-        del next['ver']
-        next = [k for k in list({k: v for k, v in sorted(next.items(), key=lambda item: item[1]['count'], reverse=True)}.keys())]
-        hash = patch_hash(next[0],prev+[hash])
+        next=json.loads(fields.get('Data', '{}'))
+        next_keys = list(next.keys())
+        next_keys.sort(key=lambda x: float(x))    
+        max_ver = next_keys[-1]
+        next_keys.pop()
+        del next[ str(max_ver)]["mod"]
+        while (len(next[max_ver])==0):
+            if(len(next_keys)==0):
+                return hash
+            max_ver = next_keys[-1]
+            next_keys.pop()
+            del next[ str(max_ver)]["mod"]
 
-
+        max_max_ver = str(max([ float(k) for k in next[max_ver].keys()]))
+        max_hash = hash
+        max_count=0
+        for hash,val in next[max_ver][max_max_ver].items():
+            if(val>max_count):
+                max_count=val
+                max_hash=hash
+        hash = patch_hash(max_hash,prev+[hash])
         pass
     return hash
 

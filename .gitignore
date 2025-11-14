@@ -43,3 +43,6 @@ unrar/
 unrarsrc-*.tar.gz
 *.env
 stack.env
+backend/imm_updated_mod.ini
+backend/service-1.py
+backend/service-3.py

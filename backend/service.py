@@ -12,7 +12,7 @@ import db
 from sessions import get_session
 from ini_parser import parse_ini_by_hash, print_parsed_ini
 session = get_session()
-
+good=[]
 logs=[]
 new_logs=[]
 def log(message: str, level: str = "info") -> None:
@@ -88,8 +88,7 @@ class File(TypedDict):
 VERSIONS=[1.1,1.2,1.3,1.4,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.7]
 VERSION_TIME=[1719532800, 1723680000, 1727568000, 1731542400, 1735776000, 1739404800, 1743033600, 1745884800, 1749686400, 1753315200, 1756339200,1759968000]
 REQUEST_TIMEOUT = 30
-bearer ="9YD7jd8LjCg-CdDPwKu3gCogalyI1tV5vdTkkFH1"
-BEARER=bearer or ""
+BEARER=""
 TASK = "Idle"
 DOWNLOAD_DIR = Path("download_temp")
 EXTRACT_DIR = Path("extract_temp")
@@ -196,10 +195,6 @@ def fix():
     broken_files=[]
     mod_to_files={}
     file_to_mod={}
-    # for mod in broken_mods:
-    #     if(mod["Id"]=="Mod/616624"):
-    #         broken_mods=[mod]
-    #         break
     print(f"Total broken mods to fix: {len(broken_mods)}")
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         # Submit all file processing tasks
@@ -267,46 +262,6 @@ def fix():
         if SLEEP_TIME>0:
             log(f"Sleeping for {SLEEP_TIME} seconds before next batch...", level="info")
             time.sleep(SLEEP_TIME)
-        # fixed_files.update(fixed)
-    # mod_patch={}
-    # for id,data in fixed_files.items():
-    #     mod_id = file_to_mod.get(id)
-    #     if not mod_id:
-    #         continue
-    #     if mod_id not in mod_patch:
-    #         mod_patch[mod_id]={}
-    #     mod_patch[mod_id][str(id)] = data
-    # patch_data=[]
-    # for mod_id, files_data in mod_patch.items():
-    #     get_mod_from_db = TABLE_DATA.get(str(mod_id))
-    #     if not get_mod_from_db:
-    #         continue
-    #     mod_data = json.loads(get_mod_from_db.get('Data',"{}"))
-    #     # log(mod_data,level="info")
-    #     mod_data.update(files_data)
-    #     # log(mod_data,level="info")
-    #     log(f"Fetched mod {mod_id} from DB for patching",level="info")
-    #     patch_data.append({
-    #         "id": mod_id,
-    #         "fields":{
-    #             "Data": mod_data
-    #         }
-    #     })
-    # # log(f"Prepared patch data for {len(patch_data)} mods. {patch_data}", level="info")
-    # if(patch_data):
-    #     log(f"Prepared patch data for {len(patch_data)} mods.", level="info")
-    #     # Batch patch data into groups of 10
-    #     batch_size = 10
-    #     for i in range(0, len(patch_data), batch_size):
-    #         batch = patch_data[i:i+batch_size]
-    #         log(f"Patching batch {i//batch_size + 1} with {len(batch)} records...", level="info")
-    #         res = db.patch('RECORDS', bearer=BEARER, table=GAME, data=batch)
-    #         log(f"Patch response: {res.status_code} - {res.text}", level="info")
-    #         if res.status_code == 200:
-    #             log(f"Successfully patched batch {i//batch_size + 1}", level="info")
-    #         else:
-    #             log(f"Failed to patch batch {i//batch_size + 1}", level="error")
-    #         time.sleep(SLEEP_TIME)  # Sleep between batches
   
     if TASK=="Stopping":
         TASK="Cancelled"
@@ -339,6 +294,8 @@ def map():
         log("Task cancelled by user.", level="info")
     else:    
         TASK="Finished"
+    with open('hashes_map.json', 'w', encoding='utf-8') as f:
+        json.dump(good, f, indent=4)
 
 def run():
     global PROGRESS,TASK
@@ -480,8 +437,6 @@ def get_cats(passive=False) -> None:
 def get_full_table_data():
     global TABLE_DATA
     records = get_recr()
-    # for record in records:
-    #      data[record['Id']] = record
    
     TABLE_DATA = {
         record["Id"]: {
@@ -724,7 +679,6 @@ def process_file(file: File, mod_id="") -> Optional[File]:
     if file["size"] > 1024*1024*1024:  # Skip files larger than 100MB
         file['data']['reason']="err: too large"
         return file
-    return file
     try:
        
         if TASK == "Stopping" or not download_file(API_DL_URL.format(file['id']), name) or not extract_file(name):
@@ -785,193 +739,300 @@ def batch_process_files(files: list[File], mod_id="") -> dict:
                 }
     return processed_files
 
-def analyze_mod(mod:Mod):#534215
-    global VERSIONS,VERSION_TIME, PROGRESS, TASK
-    # BEARER="9YD7jd8LjCg-CdDPwKu3gCogalyI1tV5vdTkkFH1"
-    # mod = Mod(
-    #     id=id,
-    #     added=0,
-    #     modified=0
-    # )
-    # response = db.get('RECORDS', bearer=BEARER, table=GAME, record=mod['id'])
-    # mod_json = response.json()
-    # mod={
-    #     "id": mod['id'],
-    #     # **data['record']['fields'] but make the keys start with lowercase
-    #     **{k[0].lower() + k[1:]: v for k, v in mod_json['fields'].items()}
-    # }
+def add_ver(a,b,c,d)->float:
+    return round((a*b + c*d)/(b+d),3)
+
+def _parse_mod_data(mod: Mod) -> Optional[list]:
+    """Parse and validate mod data JSON."""
     try:
         mod["data"] = json.loads(mod["data"])
     except Exception as e:
         log(f"Error parsing mod data JSON for mod {mod['id']}: {e}", level="error")
-        return False
+        return None
+    
     if not mod["data"]:
-        print("No data to analyze.")
-        return False
-    #convert data["data"] from dict {id:data} to an array , filter by status=="success"
-    mod["data"] = [{**v, "id": k} for k, v in mod["data"].items() if v.get("status")=="success"]
+        log("No data to analyze.", level="info")
+        return None
     
-    sorted_files = mod["data"].copy()
-    sorted_files.sort(key=lambda x: x.get("added",0))
-    
-    files_grouped_by_version={}
+    # Convert data from dict {id:data} to array, filter by status=="success"
+    return [{**v, "id": k} for k, v in mod["data"].items() if v.get("status") == "success"]
 
-    for file in mod["data"]:
+
+def _get_file_version(file_added: int) -> float:
+    """Determine the version based on file added timestamp."""
+    file_version = file_added
+    for i in range(len(VERSION_TIME)):
+        if file_added >= VERSION_TIME[i]:
+            file_version = VERSIONS[i]
+    return file_version
+
+
+def _group_files_by_version(files: list) -> dict:
+    """Group files by their version."""
+    files_grouped_by_version = {}
+    for file in files:
         file_added = file.get("added", 0)
-        file_version = file_added   
-        # for i in range(len(VERSION_TIME)):
-        #     if file_added >= VERSION_TIME[i]:
-        #         file_version = VERSIONS[i]
+        file_version = _get_file_version(file_added)
+        
         if file_version not in files_grouped_by_version:
             files_grouped_by_version[file_version] = []
         files_grouped_by_version[file_version].append(file)
     
-    if(len(files_grouped_by_version)<2):
-        print("Not enough versions to map.")
-        return False
+    return files_grouped_by_version
 
-    prefix = f"{GAME}/{mod['id']}/"
-    inis = {file["Id"].replace(prefix,""):{
-        "name": file["Name"],
-        "data": parse_ini_by_hash(file["Data"])
-    } for file in get_recr(query_params={'where': f"(Id, like, {prefix})"}, table="INI")}
-    
-    inis_grouped_by_version={}
-    for version in files_grouped_by_version:
-        inis_grouped_by_version[version] = []
-        for file in files_grouped_by_version[version]:
-            ini_count = file.get("ini_count", 0)
-            inis_data = []
-            for i in range(ini_count):
-                ini_id = f"{file['id']}/{i}"
-                if ini_id in inis:
-                    inis_data.append(inis[ini_id])
-            inis_grouped_by_version[version].append({
-                "file_id": file['id'],
-                "inis": inis_data
-            })
-        merged_data={}
-        for file in inis_grouped_by_version[version]:
-            for i,ini in enumerate(file["inis"]):
-                exists = list(filter(lambda x: x.startswith(f'{ini["name"]}'), merged_data.keys()))
-                key = f'{ini["name"]}'
-                if not i==0 and exists:   
-                    key += f'_{i}'
-                
-                if not exists or not key in merged_data:
-                    merged_data[key] = ini["data"]
-                elif not ini["data"] == merged_data[exists[0]]:
-                    merged_data[key].update(ini["data"])
-        inis_grouped_by_version[version] = merged_data
-    
-    inis_grouped_by_name={}
-    for version,files in inis_grouped_by_version.items():
-        for name,ini in files.items():
-            if name not in inis_grouped_by_name:
-                inis_grouped_by_name[name]={}
-            inis_grouped_by_name[name][str(version)]=ini
-    
-    hashes={}
-    for file, data in inis_grouped_by_name.items():
-        keys={}
-        for ver, ini in data.items():
-            for key,hash in ini.items():
-                if key not in keys:
-                    keys[key]={}
-                if hash not in keys[key]:
-                    keys[key][hash]=ver
+
+def _fetch_ini_files(mod_id: str) -> dict:
+    """Fetch and parse INI files for a mod."""
+    prefix = f"{GAME}/{mod_id}/"
+    return {
+        file["Id"].replace(prefix, ""): {
+            "name": file["Name"],
+            "data": parse_ini_by_hash(file["Data"])
+        }
+        for file in get_recr(query_params={'where': f"(Id, like, {prefix})"}, table="INI")
+    }
+
+
+def _collect_version_inis(files_grouped_by_version: dict, inis: dict) -> list:
+    """Collect INI data for files in a version."""
+    version_inis = []
+    for file in files_grouped_by_version:
+        ini_count = file.get("ini_count", 0)
+        inis_data = []
+        for i in range(ini_count):
+            ini_id = f"{file['id']}/{i}"
+            if ini_id in inis:
+                inis_data.append(inis[ini_id])
+        version_inis.append({
+            "file_id": file['id'],
+            "inis": inis_data
+        })
+    return version_inis
+
+
+def _merge_version_inis(version_inis: list) -> dict:
+    """Merge INI data for a version, handling duplicates."""
+    merged_data = {}
+    for file in version_inis:
+        for i, ini in enumerate(file["inis"]):
+            exists = [k for k in merged_data.keys() if k.startswith(ini["name"])]
+            key = ini["name"]
             
-        
-        for key,obj in keys.items():
-            if len(obj)<2:
-                continue
-            prev=""
-            for hash,ver in obj.items():
-                if(prev and not prev==hash):
-                    if not hash in hashes[prev]["next"]:
-                        hashes[prev]["next"][hash]={"count":0}
-                    hashes[prev]["next"][hash]["count"]+=1
-                    hashes[prev]["next"]["ver"]=max(hashes[prev]["next"].get("ver",999),float(ver))
-                prev=hash
-                if not hash in hashes:
-                    hashes[hash]={"next":{}}
-                # hashes[hash]["ver"]=min(hashes[hash].get("ver",0),float(ver))     
+            if i != 0 and exists:
+                key += f'_{i}'
+            
+            if not exists or key not in merged_data:
+                merged_data[key] = ini["data"]
+            elif ini["data"] != merged_data[exists[0]]:
+                merged_data[key].update(ini["data"])
+    
+    return merged_data
 
-        inis_grouped_by_name[file]=keys
-        pass 
-    PROGRESS["total_files_processed"]+=len(inis)
-    def upsert_hash(hash,next,prev=[]):
-        if not next:
-            print(f"Skipped hash {hash} as no next data.")      
-            return
-        data = {"Hash":hash,"Next":json.dumps(next)}
-        if(hash in prev or next.get(hash)):
-            data=json.loads(db.get('RECORDS', bearer=BEARER, table="WWH",record="-warning-loop").json().get('fields',{}).get('Next',"{}"))
-            data[datetime.now().isoformat()]="warning: loop detected in "+ "->".join(prev+[hash])
-            db.patch('RECORDS', bearer=BEARER, table="WWH",data=[{
-                "Hash":"-warning-loop",
-                "Next":json.dumps(data)
-            }] )
-            return
-        res=db.post("GENERIC", bearer=BEARER, table="WWH",data=data )
-        
-        if res.status_code==400:
-            res=db.get('RECORDS', bearer=BEARER, table="WWH",record=hash)
-            if res.status_code==200:
-                ver=next.get("ver",0)
-                del next["ver"]
-                old_next=json.loads(res.json().get('fields',{}).get('Next',"{}"))
-                old_ver = old_next.get("ver",0)
-                del old_next["ver"]
-                if(old_next==next):
-                    for k in next:
-                        if k in old_next:
-                            next[k]["count"]+=old_next[k].get("count",0)
-                    next["ver"]=min(old_ver,ver)
-                elif old_ver>ver:
-                    for h in next:
-                        upsert_hash(h,{**old_next,"ver":old_ver},prev+[hash])
-                elif ver>old_ver:
-                    for h in old_next:
-                        upsert_hash(h,{**next,"ver":ver},prev+[hash])
+
+def _group_inis_by_version(files_grouped_by_version: dict, inis: dict) -> dict:
+    """Group and merge INI files by version."""
+    inis_grouped_by_version = {}
+    for version, files in files_grouped_by_version.items():
+        version_inis = _collect_version_inis(files, inis)
+        inis_grouped_by_version[version] = _merge_version_inis(version_inis)
+    
+    return inis_grouped_by_version
+
+
+def _group_inis_by_name(inis_grouped_by_version: dict) -> dict:
+    """Reorganize INI data by name across versions."""
+    inis_grouped_by_name = {}
+    for version, files in inis_grouped_by_version.items():
+        for name, ini in files.items():
+            if name not in inis_grouped_by_name:
+                inis_grouped_by_name[name] = {}
+            inis_grouped_by_name[name][str(version)] = ini
+    
+    return inis_grouped_by_name
+
+
+def _build_next_candidates(hash_list: list, current_obj: dict) -> dict:
+    """Build next version candidates for a hash."""
+    candidates = [x for x in hash_list if x["ver"] >= current_obj["ver"] and x["hash"] != current_obj["hash"]]
+    next_versions = {}
+    
+    for candidate in candidates:
+        if candidate["ver"] not in next_versions:
+            next_versions[candidate["ver"]] = {}
+        if candidate["hash"] not in next_versions[candidate["ver"]]:
+            next_versions[candidate["ver"]][candidate["hash"]] = 0
+        next_versions[candidate["ver"]][candidate["hash"]] += 1
+    
+    return next_versions
+
+
+def _merge_hash_data(hashes: dict, hash_key: str, version: str, next_data: dict, mod_id: str) -> None:
+    """Merge hash data into the hashes dictionary."""
+    if hash_key in hashes:
+        if version in hashes[hash_key]:
+            hashes[hash_key][version]["mod"].append(mod_id)
+            # Merge next version data
+            for ver_key in next_data.keys():
+                if ver_key in hashes[hash_key][version]["next"]:
+                    for hash_id in next_data[ver_key].keys():
+                        if hash_id in hashes[hash_key][version]["next"][ver_key]:
+                            hashes[hash_key][version]["next"][ver_key][hash_id] += next_data[ver_key][hash_id]
+                        else:
+                            hashes[hash_key][version]["next"][ver_key][hash_id] = next_data[ver_key][hash_id]
                 else:
-                    next={**old_next,**next,"ver":ver}
-                res=db.patch('RECORDS', bearer=BEARER, table="WWH",  data=[{"Hash":hash,"Next":json.dumps(next)}] )          
-        elif res.status_code==200:
-            print(f"Uploaded hash {hash} successfully.")
+                    hashes[hash_key][version]["next"][ver_key] = next_data[ver_key]
         else:
-            print(f"Failed to upload hash {hash}. Status code: {res.status_code}. Message: {res.text}")  
-        
-    for hash, obj in hashes.items():
-        if TASK=="Stopping":
-            break
-        upsert_hash(hash,obj["next"])  
+            hashes[hash_key][version] = {
+                "next": next_data,
+                "mod": [mod_id]
+            }
+    else:
+        hashes[hash_key] = {
+            version: {
+                "next": next_data,
+                "mod": [mod_id]
+            }
+        }
 
-    if TASK=="Stopping":
+
+def _process_hash_mappings(inis_grouped_by_name: dict, mod_id: str) -> dict:
+    """Process INI data to build hash version mappings."""
+    hashes = {}
+    
+    for file, data in inis_grouped_by_name.items():
+        keys = {}
+        # Build keys mapping for each version
+        for ver, ini in data.items():
+            for key, hash_val in ini.items():
+                if key not in keys:
+                    keys[key] = {}
+                if hash_val not in keys[key]:
+                    keys[key][hash_val] = ver
+        
+        # Process each key's hash mappings
+        for key, hash_versions in keys.items():
+            if len(hash_versions) < 2:
+                continue
+            
+            hash_list = [{"hash": k, "ver": v} for k, v in hash_versions.items()]
+            hash_list.sort(key=lambda x: float(x["ver"]))
+            
+            for hash_obj in hash_list:
+                next_data = _build_next_candidates(hash_list, hash_obj)
+                _merge_hash_data(hashes, hash_obj["hash"], hash_obj["ver"], next_data, mod_id)
+    
+    return hashes
+
+
+def _flatten_hash_data(hashes: dict) -> dict:
+    """Flatten hash data structure for storage."""
+    for hash_key in hashes.keys():
+        for ver in hashes[hash_key].keys():
+            hashes[hash_key][ver] = {
+                **hashes[hash_key][ver]["next"],
+                "mod": list(set(hashes[hash_key][ver]["mod"]))
+            }
+    return hashes
+
+
+def _merge_existing_hash_data(existing_data: dict, new_data: dict) -> dict:
+    """Merge new hash data into existing data."""
+    for hash_ver in new_data.keys():
+        if hash_ver in existing_data:
+            for ver in new_data[hash_ver].keys():
+                if ver == "mod":
+                    existing_data[hash_ver][ver] = list(set(existing_data[hash_ver][ver] + new_data[hash_ver]["mod"]))
+                    continue
+                
+                if ver in existing_data[hash_ver]:
+                    for key in new_data[hash_ver][ver].keys():
+                        if key in existing_data[hash_ver][ver]:
+                            existing_data[hash_ver][ver][key] += new_data[hash_ver][ver][key]
+                        else:
+                            existing_data[hash_ver][ver][key] = new_data[hash_ver][ver][key]
+                else:
+                    existing_data[hash_ver][ver] = new_data[hash_ver][ver]
+        else:
+            existing_data[hash_ver] = new_data[hash_ver]
+    
+    return existing_data
+
+
+def _upsert_hash(hash_key: str, hash_data: dict) -> None:
+    """Insert or update hash data in the database."""
+    res = db.post('GENERIC', bearer=BEARER, table="WWH", data={
+        "Hash": hash_key,
+        "Data": json.dumps(hash_data)
+    })
+    
+    if res.status_code == 200:
+        log(f"Upserted hash {hash_key} successfully.", level="info")
+    else:
+        # Try to update existing record
+        res = db.get('RECORDS', bearer=BEARER, table="WWH", record=hash_key)
+        if res.status_code == 200:
+            record = res.json().get('fields', {})
+            existing_data = json.loads(record.get('Data', '{}'))
+            
+            merged_data = _merge_existing_hash_data(existing_data, hash_data)
+            
+            patch_res = db.patch('RECORDS', bearer=BEARER, table="WWH", data=[{
+                "id": hash_key,
+                "fields": {
+                    "Data": merged_data
+                }
+            }])
+            
+            if patch_res.status_code == 200:
+                log(f"Patched existing hash {hash_key} successfully.", level="info")
+            else:
+                log(f"Failed to patch existing hash {hash_key}: {patch_res.status_code} - {patch_res.text}", level="error")
+
+
+def analyze_mod(mod: Mod) -> bool:
+    """Analyze a mod to build hash version mappings."""
+    global PROGRESS, TASK, good
+    
+    # Parse and validate mod data
+    parsed_data = _parse_mod_data(mod)
+    if parsed_data is None:
         return False
+    
+    mod["data"] = parsed_data
+    
+    # Group files by version
+    files_grouped_by_version = _group_files_by_version(mod["data"])
+    
+    if len(files_grouped_by_version) < 2:
+        log("Not enough versions to map.", level="info")
+        return False
+    
+    # Fetch and process INI files
+    inis = _fetch_ini_files(mod['id'])
+    inis_grouped_by_version = _group_inis_by_version(files_grouped_by_version, inis)
+    inis_grouped_by_name = _group_inis_by_name(inis_grouped_by_version)
+    
+    # Build hash mappings
+    hashes = _process_hash_mappings(inis_grouped_by_name, mod['id'])
+    
+    # Update progress
+    PROGRESS["total_files_processed"] += len(inis)
+    
+    # Flatten hash data
+    hashes = _flatten_hash_data(hashes)
+    good.append(hashes)
+    
+    # Upsert hash data to database
+    for hash_key, hash_obj in hashes.items():
+        if TASK == "Stopping":
+            break
+        _upsert_hash(hash_key, hash_obj)
+    
+    if TASK == "Stopping":
+        return False
+    
+    # Save to temp file for debugging
     with open("temp.json", "w", encoding="utf-8") as f:
         json.dump(hashes, f, ensure_ascii=False, indent=4)
-    return True
-
-# analyze_mod()
-
-# hashes = get_recr(table="WWH")
-# count_multi=0
-# count_single=0
-# for hash in hashes:
-#     try:
-#         hash["Next"] = json.loads(hash.get("Next","{}"))
-#     except Exception as e:
-#         log(f"Error parsing hash Next JSON for hash {hash['Hash']}: {e}", level="error")
-#         hash["Next"] = {}
-#     if len(hash["Next"])>2:
-#         count_multi+=1
-#     if hash["Next"]:
-#         del hash["Next"]["ver"]
-#         for next in hash["Next"].values():
-#             if next["count"]==1:
-#                 count_single+=1 
-
-# print(f"Total hashes with multiple next entries: {count_multi}")
-# print(f"Total next entries with count 1: {count_single}")
     
+    return True
